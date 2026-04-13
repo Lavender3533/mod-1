@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
@@ -28,6 +29,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
+import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
+import org.example.mod_1.mod_1.combat.input.CombatKeyBindings;
+import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.slf4j.Logger;
 
 // The value here should match an entry in the META-INF/mods.toml file
@@ -78,6 +82,12 @@ public class Mod_1 {
 
         // Register our mod's ForgeConfigSpec so that Forge can create and load the config file for us
         context.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
+
+        // Initialize combat network channel
+        CombatNetworkChannel.init();
+
+        // Register key mappings via the mod bus group's specific event bus
+        RegisterKeyMappingsEvent.getBus(modBusGroup).addListener(CombatKeyBindings::registerKeys);
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
@@ -119,9 +129,10 @@ public class Mod_1 {
 
         @SubscribeEvent
         public static void onClientSetup(FMLClientSetupEvent event) {
-            // Some client setup code
             LOGGER.info("HELLO FROM CLIENT SETUP");
             LOGGER.info("MINECRAFT NAME >> {}", Minecraft.getInstance().getUser().getName());
+            // Initialize combat animation layer
+            CombatAnimationController.init();
         }
     }
 }

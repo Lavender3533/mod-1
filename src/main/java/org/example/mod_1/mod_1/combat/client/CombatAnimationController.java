@@ -1,0 +1,326 @@
+package org.example.mod_1.mod_1.combat.client;
+
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+import org.example.mod_1.mod_1.Mod_1;
+import org.example.mod_1.mod_1.combat.CombatState;
+import org.example.mod_1.mod_1.combat.WeaponType;
+import org.example.mod_1.mod_1.combat.capability.ICombatCapability;
+import org.slf4j.Logger;
+
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+
+public class CombatAnimationController {
+
+    private static final Logger LOGGER = LogUtils.getLogger();
+    private static final float DEG_TO_RAD = (float) (Math.PI / 180.0);
+
+    // animName -> boneName -> keyframes [time, rx, ry, rz]
+    private static final Map<String, Map<String, List<float[]>>> ANIM_DATA = new HashMap<>();
+    private static final Map<String, Float> ANIM_LENGTHS = new HashMap<>();
+    private static final Map<String, Boolean> ANIM_LOOPS = new HashMap<>();
+
+    private static String currentAnim = null;
+    private static long animStartTick = 0;
+    private static boolean loaded = false;
+    private static boolean active = false;
+
+    // 17→6 bone merge mapping: child bones whose rotations get ADDED to a target vanilla bone
+    private static final Map<String, String> BONE_TO_VANILLA = Map.ofEntries(
+            Map.entry("head", "head"),
+            Map.entry("neck", "head"),
+            Map.entry("chest", "body"),
+            Map.entry("waist", "body"),
+            Map.entry("rightUpperArm", "rightArm"),
+            Map.entry("rightLowerArm", "rightArm"),
+            Map.entry("right_upper_arm", "rightArm"),
+            Map.entry("right_lower_arm", "rightArm"),
+            Map.entry("leftUpperArm", "leftArm"),
+            Map.entry("leftLowerArm", "leftArm"),
+            Map.entry("left_upper_arm", "leftArm"),
+            Map.entry("left_lower_arm", "leftArm"),
+            Map.entry("rightUpperLeg", "rightLeg"),
+            Map.entry("rightLowerLeg", "rightLeg"),
+            Map.entry("right_upper_leg", "rightLeg"),
+            Map.entry("right_lower_leg", "rightLeg"),
+            Map.entry("leftUpperLeg", "leftLeg"),
+            Map.entry("leftLowerLeg", "leftLeg"),
+            Map.entry("left_upper_leg", "leftLeg"),
+            Map.entry("left_lower_leg", "leftLeg")
+    );
+
+    private static final String[] ANIMATION_FILES = {
+            "animations/basic/anim_idle.animation.json",
+            "animations/basic/anim_walk.animation.json",
+            "animations/basic/anim_run.animation.json",
+            "animations/basic/anim_crouch.animation.json",
+            "animations/basic/anim_jump.animation.json",
+            "animations/combat/anim_draw_weapon.animation.json",
+            "animations/combat/anim_sheath_weapon.animation.json",
+            "animations/combat/anim_dodge.animation.json",
+            "animations/combat/anim_block.animation.json",
+            "animations/combat/anim_parry.animation.json",
+            "animations/sword/anim_sword_idle.animation.json",
+            "animations/sword/anim_sword_light_1.animation.json",
+            "animations/sword/anim_sword_light_2.animation.json",
+            "animations/sword/anim_sword_light_3.animation.json",
+            "animations/sword/anim_sword_heavy.animation.json",
+            "animations/sword/anim_sword_dash_attack.animation.json",
+            "animations/spear/anim_spear_idle.animation.json",
+            "animations/spear/anim_spear_light.animation.json",
+            "animations/spear/anim_spear_heavy.animation.json",
+    };
+
+    public static void init() {
+        LOGGER.info("Combat animation controller initialized (17-bone merge engine)");
+    }
+
+    public static CombatPlayerAnimatable getAnimatable() {
+        return new CombatPlayerAnimatable();
+    }
+
+    private static void loadAnimations() {
+        if (loaded) return;
+        for (String file : ANIMATION_FILES) {
+            try {
+                Identifier id = Identifier.fromNamespaceAndPath(Mod_1.MODID, file);
+                Resource resource = Minecraft.getInstance().getResourceManager().getResourceOrThrow(id);
+                try (InputStream is = resource.open()) {
+                    JsonObject root = JsonParser.parseReader(new InputStreamReader(is, StandardCharsets.UTF_8)).getAsJsonObject();
+                    JsonObject animations = root.getAsJsonObject("animations");
+                    for (Map.Entry<String, JsonElement> entry : animations.entrySet()) {
+                        String animName = entry.getKey();
+                        JsonObject animObj = entry.getValue().getAsJsonObject();
+                        float length = animObj.has("animation_length") ? animObj.get("animation_length").getAsFloat() : 1.0f;
+                        boolean loop = animObj.has("loop") && animObj.get("loop").getAsBoolean();
+                        ANIM_LENGTHS.put(animName, length);
+                        ANIM_LOOPS.put(animName, loop);
+
+                        Map<String, List<float[]>> bones = new HashMap<>();
+                        JsonObject bonesObj = animObj.getAsJsonObject("bones");
+                        if (bonesObj != null) {
+                            for (Map.Entry<String, JsonElement> boneEntry : bonesObj.entrySet()) {
+                                String boneName = boneEntry.getKey();
+                                JsonObject boneData = boneEntry.getValue().getAsJsonObject();
+                                JsonObject rotation = boneData.getAsJsonObject("rotation");
+                                if (rotation != null) {
+                                    List<float[]> keyframes = new ArrayList<>();
+                                    for (Map.Entry<String, JsonElement> kf : rotation.entrySet()) {
+                                        float time = Float.parseFloat(kf.getKey());
+                                        float[] rot = parseVec3(kf.getValue());
+                                        keyframes.add(new float[]{time, rot[0], rot[1], rot[2]});
+                                    }
+                                    keyframes.sort(Comparator.comparingDouble(a -> a[0]));
+                                    bones.put(boneName, keyframes);
+                                }
+                            }
+                        }
+                        ANIM_DATA.put(animName, bones);
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.warn("Failed to load animation: {}", file, e);
+            }
+        }
+        loaded = true;
+        LOGGER.info("Loaded {} animations (17-bone)", ANIM_DATA.size());
+    }
+
+    private static float[] parseVec3(JsonElement element) {
+        if (element.isJsonArray()) {
+            var arr = element.getAsJsonArray();
+            return new float[]{arr.get(0).getAsFloat(), arr.get(1).getAsFloat(), arr.get(2).getAsFloat()};
+        }
+        return new float[]{0, 0, 0};
+    }
+
+    public static void updateAnimation(AbstractClientPlayer player, ICombatCapability cap) {
+        loadAnimations();
+        String animName = resolveAnimationName(cap);
+        if (animName == null) {
+            currentAnim = null;
+            active = false;
+            return;
+        }
+        if (!animName.equals(currentAnim)) {
+            currentAnim = animName;
+            animStartTick = player.level().getGameTime();
+            active = true;
+        }
+    }
+
+    public static boolean isActive() {
+        return active && currentAnim != null;
+    }
+
+    /**
+     * Apply animation directly to 17-bone CombatPlayerModel.
+     * No merging needed — each bone gets its own rotation.
+     */
+    public static void applyTo17Bones(CombatPlayerModel model) {
+        if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+
+        float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
+        boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
+        long elapsed = mc.level.getGameTime() - animStartTick;
+        float timeSec = (elapsed + mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)) / 20.0f;
+
+        if (!loop && timeSec > length) return;
+        if (loop) timeSec = timeSec % length;
+
+        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
+        model.resetAllPoses();
+
+        for (Map.Entry<String, List<float[]>> entry : bones.entrySet()) {
+            ModelPart part = model.boneMap.get(entry.getKey());
+            if (part == null) continue;
+
+            float[] rot = interpolate(entry.getValue(), timeSec);
+            part.xRot = rot[0] * DEG_TO_RAD;
+            part.yRot = rot[1] * DEG_TO_RAD;
+            part.zRot = rot[2] * DEG_TO_RAD;
+        }
+    }
+
+    /**
+     * Called from Mixin after vanilla setupAnim (6-bone fallback).
+     */
+    public static void applyToBones(ModelPart head, ModelPart body, ModelPart rightArm, ModelPart leftArm, ModelPart rightLeg, ModelPart leftLeg) {
+        if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+
+        float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
+        boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
+        long elapsed = mc.level.getGameTime() - animStartTick;
+        float timeSec = (elapsed + mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)) / 20.0f;
+
+        if (!loop && timeSec > length) return;
+        if (loop) timeSec = timeSec % length;
+
+        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
+
+        // Accumulate rotations from all 17 bones into the 6 vanilla parts
+        float[] headRot = {0, 0, 0}, bodyRot = {0, 0, 0};
+        float[] rArmRot = {0, 0, 0}, lArmRot = {0, 0, 0};
+        float[] rLegRot = {0, 0, 0}, lLegRot = {0, 0, 0};
+
+        for (Map.Entry<String, List<float[]>> entry : bones.entrySet()) {
+            String boneName = entry.getKey();
+            String target = BONE_TO_VANILLA.get(boneName);
+            if (target == null) continue;
+
+            float[] rot = interpolate(entry.getValue(), timeSec);
+            float[] accumulator = switch (target) {
+                case "head" -> headRot;
+                case "body" -> bodyRot;
+                case "rightArm" -> rArmRot;
+                case "leftArm" -> lArmRot;
+                case "rightLeg" -> rLegRot;
+                case "leftLeg" -> lLegRot;
+                default -> null;
+            };
+            if (accumulator != null) {
+                accumulator[0] += rot[0];
+                accumulator[1] += rot[1];
+                accumulator[2] += rot[2];
+            }
+        }
+
+        // Apply merged rotations (additive on top of vanilla)
+        head.xRot += headRot[0] * DEG_TO_RAD;
+        head.yRot += headRot[1] * DEG_TO_RAD;
+        head.zRot += headRot[2] * DEG_TO_RAD;
+        body.xRot += bodyRot[0] * DEG_TO_RAD;
+        body.yRot += bodyRot[1] * DEG_TO_RAD;
+        body.zRot += bodyRot[2] * DEG_TO_RAD;
+        rightArm.xRot += rArmRot[0] * DEG_TO_RAD;
+        rightArm.yRot += rArmRot[1] * DEG_TO_RAD;
+        rightArm.zRot += rArmRot[2] * DEG_TO_RAD;
+        leftArm.xRot += lArmRot[0] * DEG_TO_RAD;
+        leftArm.yRot += lArmRot[1] * DEG_TO_RAD;
+        leftArm.zRot += lArmRot[2] * DEG_TO_RAD;
+        rightLeg.xRot += rLegRot[0] * DEG_TO_RAD;
+        rightLeg.yRot += rLegRot[1] * DEG_TO_RAD;
+        rightLeg.zRot += rLegRot[2] * DEG_TO_RAD;
+        leftLeg.xRot += lLegRot[0] * DEG_TO_RAD;
+        leftLeg.yRot += lLegRot[1] * DEG_TO_RAD;
+        leftLeg.zRot += lLegRot[2] * DEG_TO_RAD;
+    }
+
+    private static float[] interpolate(List<float[]> keyframes, float time) {
+        if (keyframes.isEmpty()) return new float[]{0, 0, 0};
+        if (keyframes.size() == 1) return new float[]{keyframes.get(0)[1], keyframes.get(0)[2], keyframes.get(0)[3]};
+
+        float[] before = keyframes.get(0);
+        float[] after = keyframes.get(keyframes.size() - 1);
+
+        for (int i = 0; i < keyframes.size() - 1; i++) {
+            if (keyframes.get(i)[0] <= time && keyframes.get(i + 1)[0] >= time) {
+                before = keyframes.get(i);
+                after = keyframes.get(i + 1);
+                break;
+            }
+        }
+
+        float dt = after[0] - before[0];
+        float t = dt > 0 ? (time - before[0]) / dt : 0;
+
+        return new float[]{
+                before[1] + (after[1] - before[1]) * t,
+                before[2] + (after[2] - before[2]) * t,
+                before[3] + (after[3] - before[3]) * t
+        };
+    }
+
+    // --- Animation name resolution ---
+
+    private static String resolveAnimationName(ICombatCapability cap) {
+        CombatState state = cap.getState();
+        WeaponType weapon = cap.getWeaponType();
+
+        return switch (state) {
+            case DRAW_WEAPON -> "animation.player.draw_weapon";
+            case SHEATH_WEAPON -> "animation.player.sheath_weapon";
+            case DODGE -> "animation.player.dodge";
+            case BLOCK -> "animation.player.block";
+            case PARRY -> "animation.player.parry";
+            case ATTACK_LIGHT -> resolveLightAttack(weapon, cap.getComboCount());
+            case ATTACK_HEAVY -> weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
+            case INSPECT -> weapon == WeaponType.SWORD ? "animation.player.sword_idle" : "animation.player.spear_idle";
+            case IDLE -> cap.isWeaponDrawn() ? "animation.player.idle" : null;
+            case WALK -> cap.isWeaponDrawn() ? "animation.player.walk" : null;
+            case RUN -> cap.isWeaponDrawn() ? "animation.player.run" : null;
+            case CROUCH -> cap.isWeaponDrawn() ? "animation.player.crouch" : null;
+            case JUMP -> cap.isWeaponDrawn() ? "animation.player.jump" : null;
+        };
+    }
+
+    private static String resolveLightAttack(WeaponType weapon, int combo) {
+        if (weapon == WeaponType.SWORD) {
+            return switch (combo) {
+                case 1 -> "animation.player.sword_light_1";
+                case 2 -> "animation.player.sword_light_2";
+                case 3 -> "animation.player.sword_light_3";
+                default -> "animation.player.sword_light_1";
+            };
+        } else if (weapon == WeaponType.SPEAR) {
+            return "animation.player.spear_light";
+        }
+        return null;
+    }
+}
