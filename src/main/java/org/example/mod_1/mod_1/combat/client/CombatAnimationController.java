@@ -31,9 +31,11 @@ public class CombatAnimationController {
     private static final Map<String, Boolean> ANIM_LOOPS = new HashMap<>();
 
     private static String currentAnim = null;
-    private static long animStartTick = 0;
+    private static long animStartNano = 0;
     private static boolean loaded = false;
     private static boolean active = false;
+    private static String lastMovementAnim = "animation.player.idle";
+    private static int movementHoldTicks = 0;
 
     // 17→6 bone merge mapping: child bones whose rotations get ADDED to a target vanilla bone
     private static final Map<String, String> BONE_TO_VANILLA = Map.ofEntries(
@@ -85,9 +87,6 @@ public class CombatAnimationController {
         LOGGER.info("Combat animation controller initialized (17-bone merge engine)");
     }
 
-    public static CombatPlayerAnimatable getAnimatable() {
-        return new CombatPlayerAnimatable();
-    }
 
     private static void loadAnimations() {
         if (loaded) return;
@@ -146,7 +145,7 @@ public class CombatAnimationController {
 
     public static void updateAnimation(AbstractClientPlayer player, ICombatCapability cap) {
         loadAnimations();
-        String animName = resolveAnimationName(cap);
+        String animName = resolveAnimationName(player, cap);
         if (animName == null) {
             currentAnim = null;
             active = false;
@@ -154,9 +153,9 @@ public class CombatAnimationController {
         }
         if (!animName.equals(currentAnim)) {
             currentAnim = animName;
-            animStartTick = player.level().getGameTime();
-            active = true;
+            animStartNano = System.nanoTime();
         }
+        active = true;
     }
 
     public static boolean isActive() {
@@ -164,28 +163,26 @@ public class CombatAnimationController {
     }
 
     /**
-     * Apply animation directly to 17-bone CombatPlayerModel.
+     * Apply animation directly to 17-bone model via boneMap.
      * No merging needed — each bone gets its own rotation.
      */
-    public static void applyTo17Bones(CombatPlayerModel model) {
+    public static void applyTo17Bones(Map<String, ModelPart> boneMap) {
         if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
-
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
 
         float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
         boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
-        long elapsed = mc.level.getGameTime() - animStartTick;
-        float timeSec = (elapsed + mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)) / 20.0f;
+        float timeSec = (System.nanoTime() - animStartNano) / 1_000_000_000.0f;
 
-        if (!loop && timeSec > length) return;
+        if (!loop && timeSec > length) {
+            active = false;
+            return;
+        }
         if (loop) timeSec = timeSec % length;
 
         Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
-        model.resetAllPoses();
 
         for (Map.Entry<String, List<float[]>> entry : bones.entrySet()) {
-            ModelPart part = model.boneMap.get(entry.getKey());
+            ModelPart part = boneMap.get(entry.getKey());
             if (part == null) continue;
 
             float[] rot = interpolate(entry.getValue(), timeSec);
@@ -201,15 +198,14 @@ public class CombatAnimationController {
     public static void applyToBones(ModelPart head, ModelPart body, ModelPart rightArm, ModelPart leftArm, ModelPart rightLeg, ModelPart leftLeg) {
         if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
 
-        Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null) return;
-
         float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
         boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
-        long elapsed = mc.level.getGameTime() - animStartTick;
-        float timeSec = (elapsed + mc.getDeltaTracker().getGameTimeDeltaPartialTick(true)) / 20.0f;
+        float timeSec = (System.nanoTime() - animStartNano) / 1_000_000_000.0f;
 
-        if (!loop && timeSec > length) return;
+        if (!loop && timeSec > length) {
+            active = false;
+            return;
+        }
         if (loop) timeSec = timeSec % length;
 
         Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
@@ -289,25 +285,57 @@ public class CombatAnimationController {
 
     // --- Animation name resolution ---
 
-    private static String resolveAnimationName(ICombatCapability cap) {
+    private static String resolveAnimationName(AbstractClientPlayer player, ICombatCapability cap) {
         CombatState state = cap.getState();
         WeaponType weapon = cap.getWeaponType();
 
-        return switch (state) {
-            case DRAW_WEAPON -> "animation.player.draw_weapon";
-            case SHEATH_WEAPON -> "animation.player.sheath_weapon";
-            case DODGE -> "animation.player.dodge";
-            case BLOCK -> "animation.player.block";
-            case PARRY -> "animation.player.parry";
-            case ATTACK_LIGHT -> resolveLightAttack(weapon, cap.getComboCount());
-            case ATTACK_HEAVY -> weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
-            case INSPECT -> weapon == WeaponType.SWORD ? "animation.player.sword_idle" : "animation.player.spear_idle";
-            case IDLE -> cap.isWeaponDrawn() ? "animation.player.idle" : null;
-            case WALK -> cap.isWeaponDrawn() ? "animation.player.walk" : null;
-            case RUN -> cap.isWeaponDrawn() ? "animation.player.run" : null;
-            case CROUCH -> cap.isWeaponDrawn() ? "animation.player.crouch" : null;
-            case JUMP -> cap.isWeaponDrawn() ? "animation.player.jump" : null;
-        };
+        // Combat actions always take priority
+        switch (state) {
+            case DRAW_WEAPON: return "animation.player.draw_weapon";
+            case SHEATH_WEAPON: return "animation.player.sheath_weapon";
+            case DODGE: return "animation.player.dodge";
+            case BLOCK: return "animation.player.block";
+            case PARRY: return "animation.player.parry";
+            case ATTACK_LIGHT: return resolveLightAttack(weapon, cap.getComboCount());
+            case ATTACK_HEAVY: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
+            case INSPECT: return weapon == WeaponType.SWORD ? "animation.player.sword_idle" : "animation.player.spear_idle";
+            default: break;
+        }
+
+        // Detect actual movement from the player entity
+        String detected;
+        if (player.isCrouching()) {
+            detected = "animation.player.crouch";
+        } else if (!player.onGround()) {
+            detected = "animation.player.jump";
+        } else if (player.isSprinting()) {
+            detected = "animation.player.run";
+        } else {
+            double dx = player.getX() - player.xOld;
+            double dz = player.getZ() - player.zOld;
+            double hSpeedSq = dx * dx + dz * dz;
+            // Hysteresis: higher threshold to enter walk, lower to exit
+            boolean wasMoving = "animation.player.walk".equals(lastMovementAnim)
+                    || "animation.player.run".equals(lastMovementAnim);
+            if (hSpeedSq > (wasMoving ? 0.00001 : 0.0004)) {
+                detected = "animation.player.walk";
+            } else {
+                detected = "animation.player.idle";
+            }
+        }
+
+        // Hold timer: require consistent state for a few ticks before switching
+        if (detected.equals(lastMovementAnim)) {
+            movementHoldTicks = 0;
+        } else {
+            movementHoldTicks++;
+            if (movementHoldTicks < 3) {
+                return lastMovementAnim; // keep previous state during hold period
+            }
+            movementHoldTicks = 0;
+        }
+        lastMovementAnim = detected;
+        return detected;
     }
 
     private static String resolveLightAttack(WeaponType weapon, int combo) {

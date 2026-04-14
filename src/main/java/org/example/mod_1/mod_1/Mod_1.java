@@ -15,6 +15,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
@@ -30,6 +31,8 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
+import org.example.mod_1.mod_1.combat.client.CombatPlayerModel;
+import org.example.mod_1.mod_1.combat.client.CombatRendererManager;
 import org.example.mod_1.mod_1.combat.input.CombatKeyBindings;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.slf4j.Logger;
@@ -88,6 +91,16 @@ public class Mod_1 {
 
         // Register key mappings via the mod bus group's specific event bus
         RegisterKeyMappingsEvent.getBus(modBusGroup).addListener(CombatKeyBindings::registerKeys);
+
+        // Register 17-bone model layer definition
+        EntityRenderersEvent.RegisterLayerDefinitions.getBus(modBusGroup).addListener(event -> {
+            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION, CombatPlayerModel::createBodyLayer);
+        });
+
+        // Initialize combat renderer when layers are added
+        EntityRenderersEvent.AddLayers.getBus(modBusGroup).addListener(event -> {
+            CombatRendererManager.init(event.getContext());
+        });
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
