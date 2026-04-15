@@ -96,9 +96,10 @@ public class Mod_1 {
         // Register key mappings via the mod bus group's specific event bus
         RegisterKeyMappingsEvent.getBus(modBusGroup).addListener(CombatKeyBindings::registerKeys);
 
-        // Register 17-bone model layer definition
+        // Register 17-bone model layer definitions (wide + slim)
         EntityRenderersEvent.RegisterLayerDefinitions.getBus(modBusGroup).addListener(event -> {
             event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION, CombatPlayerModel::createBodyLayer);
+            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION_SLIM, CombatPlayerModel::createSlimBodyLayer);
         });
 
         // Initialize combat renderer when layers are added

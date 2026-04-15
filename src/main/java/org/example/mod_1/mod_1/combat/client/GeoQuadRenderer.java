@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.core.Direction;
 import org.example.mod_1.mod_1.mixin.ModelPartAccessor;
-import org.joml.Vector3f;
 import org.joml.Vector3fc;
 import org.slf4j.Logger;
 
@@ -36,22 +35,73 @@ public class GeoQuadRenderer {
                 new float[]{20,20,8,6}, new float[]{32,20,8,6},
                 new float[]{28,20,4,6}, new float[]{16,20,4,6},
                 new float[]{20,16,8,4}, new float[]{28,20,8,-4}));
-        fix(model.rightUpperArm, uv(
-                new float[]{44,20,4,6}, new float[]{52,20,4,6},
-                new float[]{48,20,4,6}, new float[]{40,20,4,6},
-                new float[]{44,16,4,4}, new float[]{48,20,4,-4}));
-        fix(model.rightLowerArm, uv(
-                new float[]{44,26,4,6}, new float[]{52,26,4,6},
-                new float[]{48,26,4,6}, new float[]{40,26,4,6},
-                new float[]{44,26,4,-4}, new float[]{48,16,4,4}));
-        fix(model.leftUpperArm, uv(
-                new float[]{36,52,4,6}, new float[]{44,52,4,6},
-                new float[]{40,52,4,6}, new float[]{32,52,4,6},
-                new float[]{36,48,4,4}, new float[]{40,52,4,-4}));
-        fix(model.leftLowerArm, uv(
-                new float[]{36,58,4,6}, new float[]{44,58,4,6},
-                new float[]{40,58,4,6}, new float[]{32,58,4,6},
-                new float[]{36,58,4,-4}, new float[]{40,48,4,4}));
+        if (model.slim) {
+            fix(model.rightUpperArm, uv(
+                    new float[]{44,20,3,6}, new float[]{51,20,3,6},
+                    new float[]{47,20,4,6}, new float[]{40,20,4,6},
+                    new float[]{44,16,3,4}, new float[]{47,20,3,-4}));
+            fix(model.rightLowerArm, uv(
+                    new float[]{44,26,3,6}, new float[]{51,26,3,6},
+                    new float[]{47,26,4,6}, new float[]{40,26,4,6},
+                    new float[]{44,26,3,-4}, new float[]{47,16,3,4}));
+            fix(model.leftUpperArm, uv(
+                    new float[]{36,52,3,6}, new float[]{43,52,3,6},
+                    new float[]{39,52,4,6}, new float[]{32,52,4,6},
+                    new float[]{36,48,3,4}, new float[]{39,52,3,-4}));
+            fix(model.leftLowerArm, uv(
+                    new float[]{36,58,3,6}, new float[]{43,58,3,6},
+                    new float[]{39,58,4,6}, new float[]{32,58,4,6},
+                    new float[]{36,58,3,-4}, new float[]{39,48,3,4}));
+            fix(model.rightSleeve, uv(
+                    new float[]{44,36,3,6}, new float[]{51,36,3,6},
+                    new float[]{47,36,4,6}, new float[]{40,36,4,6},
+                    new float[]{44,32,3,4}, new float[]{47,36,3,-4}));
+            fix(model.rightLowerSleeve, uv(
+                    new float[]{44,42,3,6}, new float[]{51,42,3,6},
+                    new float[]{47,42,4,6}, new float[]{40,42,4,6},
+                    new float[]{44,42,3,-4}, new float[]{47,32,3,4}));
+            fix(model.leftSleeve, uv(
+                    new float[]{52,52,3,6}, new float[]{59,52,3,6},
+                    new float[]{55,52,4,6}, new float[]{48,52,4,6},
+                    new float[]{52,48,3,4}, new float[]{55,52,3,-4}));
+            fix(model.leftLowerSleeve, uv(
+                    new float[]{52,58,3,6}, new float[]{59,58,3,6},
+                    new float[]{55,58,4,6}, new float[]{48,58,4,6},
+                    new float[]{52,58,3,-4}, new float[]{55,48,3,4}));
+        } else {
+            fix(model.rightUpperArm, uv(
+                    new float[]{44,20,4,6}, new float[]{52,20,4,6},
+                    new float[]{48,20,4,6}, new float[]{40,20,4,6},
+                    new float[]{44,16,4,4}, new float[]{48,20,4,-4}));
+            fix(model.rightLowerArm, uv(
+                    new float[]{44,26,4,6}, new float[]{52,26,4,6},
+                    new float[]{48,26,4,6}, new float[]{40,26,4,6},
+                    new float[]{44,26,4,-4}, new float[]{48,16,4,4}));
+            fix(model.leftUpperArm, uv(
+                    new float[]{36,52,4,6}, new float[]{44,52,4,6},
+                    new float[]{40,52,4,6}, new float[]{32,52,4,6},
+                    new float[]{36,48,4,4}, new float[]{40,52,4,-4}));
+            fix(model.leftLowerArm, uv(
+                    new float[]{36,58,4,6}, new float[]{44,58,4,6},
+                    new float[]{40,58,4,6}, new float[]{32,58,4,6},
+                    new float[]{36,58,4,-4}, new float[]{40,48,4,4}));
+            fix(model.rightSleeve, uv(
+                    new float[]{44,36,4,6}, new float[]{52,36,4,6},
+                    new float[]{48,36,4,6}, new float[]{40,36,4,6},
+                    new float[]{44,32,4,4}, new float[]{48,36,4,-4}));
+            fix(model.rightLowerSleeve, uv(
+                    new float[]{44,42,4,6}, new float[]{52,42,4,6},
+                    new float[]{48,42,4,6}, new float[]{40,42,4,6},
+                    new float[]{44,42,4,-4}, new float[]{48,32,4,4}));
+            fix(model.leftSleeve, uv(
+                    new float[]{52,52,4,6}, new float[]{60,52,4,6},
+                    new float[]{56,52,4,6}, new float[]{48,52,4,6},
+                    new float[]{52,48,4,4}, new float[]{56,52,4,-4}));
+            fix(model.leftLowerSleeve, uv(
+                    new float[]{52,58,4,6}, new float[]{60,58,4,6},
+                    new float[]{56,58,4,6}, new float[]{48,58,4,6},
+                    new float[]{52,58,4,-4}, new float[]{56,48,4,4}));
+        }
         fix(model.rightUpperLeg, uv(
                 new float[]{4,20,4,6}, new float[]{12,20,4,6},
                 new float[]{8,20,4,6}, new float[]{0,20,4,6},
@@ -93,35 +143,59 @@ public class GeoQuadRenderer {
 
         for (int pi = 0; pi < cube.polygons.length; pi++) {
             ModelPart.Polygon polygon = cube.polygons[pi];
-            Direction dir = dirFromNormal(polygon.normal());
-            if (dir == null) continue;
+            Direction actualDir = dirFromNormal(polygon.normal());
+            if (actualDir == null) continue;
 
-            float[] faceUV = faceUVs.get(dir);
+            Direction uvDir = switch (actualDir) {
+                case UP -> Direction.DOWN;
+                case DOWN -> Direction.UP;
+                default -> actualDir;
+            };
+
+            float[] faceUV = faceUVs.get(uvDir);
             if (faceUV == null) continue;
 
             // Calculate normalized UV
-            float u = faceUV[0] / TEX_W;
-            float v = faceUV[1] / TEX_H;
-            float u2 = (faceUV[0] + faceUV[2]) / TEX_W;
-            float v2 = (faceUV[1] + faceUV[3]) / TEX_H;
+            float rawU1 = faceUV[0] / TEX_W;
+            float rawV1 = faceUV[1] / TEX_H;
+            float rawU2 = (faceUV[0] + faceUV[2]) / TEX_W;
+            float rawV2 = (faceUV[1] + faceUV[3]) / TEX_H;
 
             // GeckoLib approach: swap U for non-mirrored cubes (Bedrock convention)
-            float tmp = u; u = u2; u2 = tmp;
+            float u = rawU2;
+            float v = rawV1;
+            float u2 = rawU1;
+            float v2 = rawV2;
 
             // Build new vertices with same positions but correct UV
-            // Vertex order: [0]=topRight, [1]=topLeft, [2]=bottomLeft, [3]=bottomRight
-            // UV mapping: 0→(u,v), 1→(u2,v), 2→(u2,v2), 3→(u,v2)
             ModelPart.Vertex[] oldVerts = polygon.vertices();
             ModelPart.Vertex[] newVerts = new ModelPart.Vertex[4];
-            newVerts[0] = oldVerts[0].remap(u, v);
-            newVerts[1] = oldVerts[1].remap(u2, v);
-            newVerts[2] = oldVerts[2].remap(u2, v2);
-            newVerts[3] = oldVerts[3].remap(u, v2);
+
+            if (actualDir == Direction.UP) {
+                float vHi = Math.max(rawV1, rawV2);
+                float vLo = Math.min(rawV1, rawV2);
+                newVerts[0] = oldVerts[0].remap(rawU2, vHi);
+                newVerts[1] = oldVerts[1].remap(rawU1, vHi);
+                newVerts[2] = oldVerts[2].remap(rawU1, vLo);
+                newVerts[3] = oldVerts[3].remap(rawU2, vLo);
+            } else if (actualDir == Direction.DOWN) {
+                float vLo = Math.min(rawV1, rawV2);
+                float vHi = Math.max(rawV1, rawV2);
+                newVerts[0] = oldVerts[0].remap(rawU2, vLo);
+                newVerts[1] = oldVerts[1].remap(rawU1, vLo);
+                newVerts[2] = oldVerts[2].remap(rawU1, vHi);
+                newVerts[3] = oldVerts[3].remap(rawU2, vHi);
+            } else {
+                newVerts[0] = oldVerts[0].remap(u, v);
+                newVerts[1] = oldVerts[1].remap(u2, v);
+                newVerts[2] = oldVerts[2].remap(u2, v2);
+                newVerts[3] = oldVerts[3].remap(u, v2);
+            }
 
             // Replace polygon with new one (simple constructor, no UV remapping)
             cube.polygons[pi] = new ModelPart.Polygon(newVerts, polygon.normal());
 
-            LOGGER.info("Fixed {} face: u={}-{}, v={}-{}", dir,
+            LOGGER.info("Fixed {} face using {} UV: u={}-{}, v={}-{}", actualDir, uvDir,
                     String.format("%.0f", faceUV[0]), String.format("%.0f", faceUV[0]+faceUV[2]),
                     String.format("%.0f", faceUV[1]), String.format("%.0f", faceUV[1]+faceUV[3]));
         }

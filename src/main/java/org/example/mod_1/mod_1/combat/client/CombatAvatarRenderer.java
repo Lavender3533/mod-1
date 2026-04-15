@@ -6,19 +6,21 @@ import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.layers.PlayerItemInHandLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
-import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.state.CameraRenderState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerModelPart;
+import net.minecraft.world.entity.player.PlayerModelType;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
 
 public class CombatAvatarRenderer
         extends LivingEntityRenderer<AbstractClientPlayer, AvatarRenderState, CombatPlayerModel> {
 
+    private final CombatPlayerModel wideModel;
+    private final CombatPlayerModel slimModel;
+
     public CombatAvatarRenderer(EntityRendererProvider.Context context) {
-        super(context, new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION)), 0.5F);
+        super(context, new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION), false), 0.5F);
+        this.wideModel = this.getModel();
+        this.slimModel = new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION_SLIM), true);
         this.addLayer(new PlayerItemInHandLayer<>(this));
         this.addLayer(new BackWeaponLayer(this));
     }
@@ -30,6 +32,10 @@ public class CombatAvatarRenderer
 
     @Override
     public void extractRenderState(AbstractClientPlayer player, AvatarRenderState state, float partialTick) {
+        // Switch model based on skin type BEFORE extracting state
+        boolean isSlim = player.getSkin().model() == PlayerModelType.SLIM;
+        this.model = isSlim ? this.slimModel : this.wideModel;
+
         super.extractRenderState(player, state, partialTick);
         HumanoidMobRenderer.extractHumanoidRenderState(player, state, partialTick, this.itemModelResolver);
         state.skin = player.getSkin();
@@ -46,7 +52,6 @@ public class CombatAvatarRenderer
 
     @Override
     protected void scale(AvatarRenderState state, PoseStack poseStack) {
-        // Match vanilla AvatarRenderer: scale model to 15/16 (0.9375)
         poseStack.scale(0.9375F, 0.9375F, 0.9375F);
     }
 
