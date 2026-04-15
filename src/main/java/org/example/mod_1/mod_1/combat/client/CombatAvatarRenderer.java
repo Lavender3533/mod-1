@@ -20,6 +20,7 @@ public class CombatAvatarRenderer
     public CombatAvatarRenderer(EntityRendererProvider.Context context) {
         super(context, new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION)), 0.5F);
         this.addLayer(new PlayerItemInHandLayer<>(this));
+        this.addLayer(new BackWeaponLayer(this));
     }
 
     @Override

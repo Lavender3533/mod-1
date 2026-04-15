@@ -1,0 +1,12 @@
+{
+  "item.mod_1.combat_wood_sword": "Combat Wooden Sword",
+  "item.mod_1.combat_stone_sword": "Combat Stone Sword",
+  "item.mod_1.combat_iron_sword": "Combat Iron Sword",
+  "item.mod_1.combat_gold_sword": "Combat Golden Sword",
+  "item.mod_1.combat_diamond_sword": "Combat Diamond Sword",
+  "item.mod_1.combat_netherite_sword": "Combat Netherite Sword",
+  "key.categories.mod_1.combat": "Combat",
+  "key.mod_1.combat_toggle": "Draw/Sheath Weapon",
+  "key.mod_1.dodge": "Dodge",
+  "key.mod_1.inspect": "Inspect Weapon"
+}

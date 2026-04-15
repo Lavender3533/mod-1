@@ -26,6 +26,8 @@ public class CombatInputHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean forcedThirdPerson = false;
+    private static int blockHoldTicks = 0;
+    private static boolean rightMouseHeld = false;
 
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
@@ -36,6 +38,16 @@ public class CombatInputHandler {
 
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
+
+            // 检视打断：移动/攻击输入时退出 INSPECT
+            if (cap.getState() == CombatState.INSPECT) {
+                double dx = mc.player.getX() - mc.player.xOld;
+                double dz = mc.player.getZ() - mc.player.zOld;
+                if (dx * dx + dz * dz > 0.001) {
+                    requestWithPrediction(cap, CombatState.IDLE);
+                }
+            }
+
             updateCamera(cap);
 
             // Update animation
@@ -45,11 +57,15 @@ public class CombatInputHandler {
 
             if (cap.isWeaponDrawn()) {
                 while (mc.options.keyAttack.consumeClick()) {
-                    requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                    if (mc.player.isSprinting() && cap.getWeaponType() == WeaponType.SWORD) {
+                        // 冲刺攻击：使用特殊 combo 值触发 dash_attack 动画
+                        cap.setComboCount(99); // 特殊标记
+                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                    } else {
+                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                    }
                 }
-                while (mc.options.keyUse.consumeClick()) {
-                    requestWithPrediction(cap, CombatState.ATTACK_HEAVY);
-                }
+                handleRightClick(mc, cap);
             }
         });
     }
@@ -81,6 +97,30 @@ public class CombatInputHandler {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
                 if (cap.isWeaponDrawn()) requestWithPrediction(cap, CombatState.INSPECT);
             });
+        }
+    }
+
+    private static void handleRightClick(Minecraft mc, ICombatCapability cap) {
+        boolean pressed = mc.options.keyUse.isDown();
+        mc.options.keyUse.consumeClick(); // 消耗点击事件防止原版行为
+
+        if (pressed) {
+            if (!rightMouseHeld) {
+                rightMouseHeld = true;
+                blockHoldTicks = 0;
+            }
+            blockHoldTicks++;
+            if (blockHoldTicks > 3 && cap.getState() != CombatState.BLOCK) {
+                requestWithPrediction(cap, CombatState.BLOCK);
+            }
+        } else if (rightMouseHeld) {
+            rightMouseHeld = false;
+            if (blockHoldTicks <= 3) {
+                requestWithPrediction(cap, CombatState.ATTACK_HEAVY);
+            } else if (cap.getState() == CombatState.BLOCK) {
+                requestWithPrediction(cap, CombatState.IDLE);
+            }
+            blockHoldTicks = 0;
         }
     }
 

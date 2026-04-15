@@ -14,6 +14,7 @@ public class CombatCapability implements ICombatCapability {
     private int dodgeCooldown = 0;
     private int stateTimer = 0;
     private int parryWindowTicks = 0;
+    private int dodgeInvulnTicks = 0;
 
     @Override public CombatState getState() { return state; }
     @Override public void setState(CombatState state) { this.state = state; }
@@ -40,11 +41,15 @@ public class CombatCapability implements ICombatCapability {
     @Override public int getParryWindowTicks() { return parryWindowTicks; }
     @Override public void setParryWindowTicks(int ticks) { this.parryWindowTicks = ticks; }
 
+    @Override public int getDodgeInvulnTicks() { return dodgeInvulnTicks; }
+    @Override public void setDodgeInvulnTicks(int ticks) { this.dodgeInvulnTicks = ticks; }
+
     @Override
     public void tickTimers() {
         if (stateTimer > 0) stateTimer--;
         if (dodgeCooldown > 0) dodgeCooldown--;
         if (parryWindowTicks > 0) parryWindowTicks--;
+        if (dodgeInvulnTicks > 0) dodgeInvulnTicks--;
     }
 
     @Override

@@ -31,11 +31,33 @@ public class CombatAnimationController {
     private static final Map<String, Boolean> ANIM_LOOPS = new HashMap<>();
 
     private static String currentAnim = null;
+    private static String prevAnim = null;
     private static long animStartNano = 0;
+    private static long transitionStartNano = 0;
+    private static final int TRANSITION_TICKS = 5;
+    private static final float TRANSITION_SECS = TRANSITION_TICKS / 20.0f;
     private static boolean loaded = false;
     private static boolean active = false;
     private static String lastMovementAnim = "animation.player.idle";
     private static int movementHoldTicks = 0;
+
+    private static final Set<String> UPPER_BODY_BONES = Set.of(
+            "waist", "chest", "neck", "head",
+            "rightUpperArm", "rightLowerArm", "rightHand",
+            "right_upper_arm", "right_lower_arm",
+            "leftUpperArm", "leftLowerArm", "leftHand",
+            "left_upper_arm", "left_lower_arm"
+    );
+    private static final Set<String> LOWER_BODY_BONES = Set.of(
+            "hip",
+            "rightUpperLeg", "rightLowerLeg",
+            "right_upper_leg", "right_lower_leg",
+            "leftUpperLeg", "leftLowerLeg",
+            "left_upper_leg", "left_lower_leg"
+    );
+
+    private static String currentMovementAnim = "animation.player.idle";
+    private static String currentCombatAnim = null;
 
     // 17→6 bone merge mapping: child bones whose rotations get ADDED to a target vanilla bone
     private static final Map<String, String> BONE_TO_VANILLA = Map.ofEntries(
@@ -81,6 +103,8 @@ public class CombatAnimationController {
             "animations/spear/anim_spear_idle.animation.json",
             "animations/spear/anim_spear_light.animation.json",
             "animations/spear/anim_spear_heavy.animation.json",
+            "animations/sword/anim_sword_inspect.animation.json",
+            "animations/spear/anim_spear_inspect.animation.json",
     };
 
     public static void init() {
@@ -145,6 +169,16 @@ public class CombatAnimationController {
 
     public static void updateAnimation(AbstractClientPlayer player, ICombatCapability cap) {
         loadAnimations();
+
+        // 检视打断：移动时自动退出 INSPECT
+        if (cap.getState() == CombatState.INSPECT) {
+            double dx = player.getX() - player.xOld;
+            double dz = player.getZ() - player.zOld;
+            if (dx * dx + dz * dz > 0.001) {
+                return; // 移动检测到，由 CombatInputHandler 发送状态切换
+            }
+        }
+
         String animName = resolveAnimationName(player, cap);
         if (animName == null) {
             currentAnim = null;
@@ -152,6 +186,8 @@ public class CombatAnimationController {
             return;
         }
         if (!animName.equals(currentAnim)) {
+            prevAnim = currentAnim;
+            transitionStartNano = System.nanoTime();
             currentAnim = animName;
             animStartNano = System.nanoTime();
         }
@@ -179,13 +215,43 @@ public class CombatAnimationController {
         }
         if (loop) timeSec = timeSec % length;
 
+        // 过渡融合权重
+        float transitionAlpha = 1.0f;
+        if (prevAnim != null && ANIM_DATA.containsKey(prevAnim)) {
+            float transElapsed = (System.nanoTime() - transitionStartNano) / 1_000_000_000.0f;
+            if (transElapsed < TRANSITION_SECS) {
+                transitionAlpha = transElapsed / TRANSITION_SECS;
+            } else {
+                prevAnim = null;
+            }
+        }
+
         Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
+        Map<String, List<float[]>> prevBones = prevAnim != null ? ANIM_DATA.get(prevAnim) : null;
+        float prevTimeSec = prevAnim != null ?
+                (System.nanoTime() - transitionStartNano) / 1_000_000_000.0f : 0;
 
-        for (Map.Entry<String, List<float[]>> entry : bones.entrySet()) {
-            ModelPart part = boneMap.get(entry.getKey());
-            if (part == null) continue;
+        for (Map.Entry<String, ModelPart> boneEntry : boneMap.entrySet()) {
+            String boneName = boneEntry.getKey();
+            ModelPart part = boneEntry.getValue();
 
-            float[] rot = interpolate(entry.getValue(), timeSec);
+            List<float[]> kfs = bones.get(boneName);
+            if (kfs == null) continue;
+
+            float[] rot = interpolate(kfs, timeSec);
+
+            if (prevBones != null && transitionAlpha < 1.0f) {
+                List<float[]> prevKfs = prevBones.get(boneName);
+                if (prevKfs != null) {
+                    float prevLen = ANIM_LENGTHS.getOrDefault(prevAnim, 1.0f);
+                    float prevT = prevLen > 0 ? prevTimeSec % prevLen : 0;
+                    float[] prevRot = interpolate(prevKfs, prevT);
+                    rot[0] = prevRot[0] + (rot[0] - prevRot[0]) * transitionAlpha;
+                    rot[1] = prevRot[1] + (rot[1] - prevRot[1]) * transitionAlpha;
+                    rot[2] = prevRot[2] + (rot[2] - prevRot[2]) * transitionAlpha;
+                }
+            }
+
             part.xRot = rot[0] * DEG_TO_RAD;
             part.yRot = rot[1] * DEG_TO_RAD;
             part.zRot = rot[2] * DEG_TO_RAD;
@@ -298,7 +364,7 @@ public class CombatAnimationController {
             case PARRY: return "animation.player.parry";
             case ATTACK_LIGHT: return resolveLightAttack(weapon, cap.getComboCount());
             case ATTACK_HEAVY: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
-            case INSPECT: return weapon == WeaponType.SWORD ? "animation.player.sword_idle" : "animation.player.spear_idle";
+            case INSPECT: return weapon == WeaponType.SPEAR ? "animation.player.spear_inspect" : "animation.player.sword_inspect";
             default: break;
         }
 
@@ -340,6 +406,7 @@ public class CombatAnimationController {
 
     private static String resolveLightAttack(WeaponType weapon, int combo) {
         if (weapon == WeaponType.SWORD) {
+            if (combo == 99) return "animation.player.sword_dash_attack";
             return switch (combo) {
                 case 1 -> "animation.player.sword_light_1";
                 case 2 -> "animation.player.sword_light_2";

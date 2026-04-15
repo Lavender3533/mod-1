@@ -9,6 +9,7 @@ public class CombatStateMachine {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int COMBO_WINDOW_TICKS = 10; // 0.5s
     private static final int DODGE_COOLDOWN_TICKS = 20; // 1.0s
+    private static final int DODGE_INVULN_TICKS = 6; // 前6tick无敌 (0.3s)
 
     public static boolean canTransition(ICombatCapability cap, CombatState target) {
         CombatState current = cap.getState();
@@ -53,16 +54,16 @@ public class CombatStateMachine {
 
         switch (target) {
             case DRAW_WEAPON -> {
-                cap.setWeaponDrawn(true);
-                cap.setState(CombatState.IDLE); // instant, go straight to IDLE
+                // 拔刀动画播放中, timer到期后在tick()里setWeaponDrawn(true)+回IDLE
             }
             case SHEATH_WEAPON -> {
-                cap.setWeaponDrawn(false);
-                cap.resetCombo();
-                cap.setState(CombatState.IDLE); // instant
+                // 收刀动画播放中, timer到期后在tick()里setWeaponDrawn(false)+回IDLE
             }
             case ATTACK_LIGHT -> handleLightAttack(cap);
-            case DODGE -> cap.setDodgeCooldown(DODGE_COOLDOWN_TICKS);
+            case DODGE -> {
+                cap.setDodgeCooldown(DODGE_COOLDOWN_TICKS);
+                cap.setDodgeInvulnTicks(DODGE_INVULN_TICKS);
+            }
             case BLOCK -> cap.setParryWindowTicks(4); // first 4 ticks = parry window
             default -> {}
         }
@@ -95,7 +96,9 @@ public class CombatStateMachine {
 
         // Timed state expired
         if (state.isTimed() && cap.getStateTimer() <= 0) {
-            if (state == CombatState.SHEATH_WEAPON) {
+            if (state == CombatState.DRAW_WEAPON) {
+                cap.setWeaponDrawn(true);
+            } else if (state == CombatState.SHEATH_WEAPON) {
                 cap.setWeaponDrawn(false);
                 cap.resetCombo();
             }

@@ -4,6 +4,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TridentItem;
+import org.example.mod_1.mod_1.combat.item.CombatSwordItem;
 
 public class WeaponDetector {
 
@@ -11,6 +12,7 @@ public class WeaponDetector {
         ItemStack held = player.getMainHandItem();
         if (held.isEmpty()) return WeaponType.UNARMED;
 
+        if (held.getItem() instanceof CombatSwordItem) return WeaponType.SWORD;
         if (held.is(ItemTags.SWORDS)) return WeaponType.SWORD;
         if (held.getItem() instanceof TridentItem) return WeaponType.SPEAR;
 

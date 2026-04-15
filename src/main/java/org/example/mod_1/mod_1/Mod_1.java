@@ -34,6 +34,7 @@ import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
 import org.example.mod_1.mod_1.combat.client.CombatPlayerModel;
 import org.example.mod_1.mod_1.combat.client.CombatRendererManager;
 import org.example.mod_1.mod_1.combat.input.CombatKeyBindings;
+import org.example.mod_1.mod_1.combat.item.ModItems;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.slf4j.Logger;
 
@@ -83,6 +84,9 @@ public class Mod_1 {
         // Register the Deferred Register to the mod bus group so tabs get registered
         CREATIVE_MODE_TABS.register(modBusGroup);
 
+        // Register combat items
+        ModItems.ITEMS.register(modBusGroup);
+
         // Register our mod's ForgeConfigSpec so that Forge can create and load the config file for us
         context.registerConfig(ModConfig.Type.COMMON, Config.SPEC);
 
@@ -117,6 +121,11 @@ public class Mod_1 {
         @SubscribeEvent
         public static void addCreative(BuildCreativeModeTabContentsEvent event) {
             if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) event.accept(EXAMPLE_BLOCK_ITEM);
+            if (event.getTabKey() == CreativeModeTabs.COMBAT) {
+                for (var sword : ModItems.ALL_SWORDS) {
+                    event.accept(sword);
+                }
+            }
         }
     }
 

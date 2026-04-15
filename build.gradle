@@ -133,6 +133,8 @@ repositories {
     // ForgeGradle automatically adds the Forge maven and Maven Central for you
     maven { url = 'https://maven.aliyun.com/repository/central' }
     maven { url = 'https://maven.aliyun.com/repository/public' }
+    // Mojang libraries (authlib etc.)
+    maven { url = 'https://libraries.minecraft.net' }
     // GeckoLib
     maven {
         url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'

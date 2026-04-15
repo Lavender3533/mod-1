@@ -33,6 +33,9 @@ public interface ICombatCapability {
     int getParryWindowTicks();
     void setParryWindowTicks(int ticks);
 
+    int getDodgeInvulnTicks();
+    void setDodgeInvulnTicks(int ticks);
+
     void tickTimers();
 
     CompoundTag serializeNBT();

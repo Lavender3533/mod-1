@@ -1,0 +1,12 @@
+{
+  "item.mod_1.combat_wood_sword": "战斗木剑",
+  "item.mod_1.combat_stone_sword": "战斗石剑",
+  "item.mod_1.combat_iron_sword": "战斗铁剑",
+  "item.mod_1.combat_gold_sword": "战斗金剑",
+  "item.mod_1.combat_diamond_sword": "战斗钻石剑",
+  "item.mod_1.combat_netherite_sword": "战斗下界合金剑",
+  "key.categories.mod_1.combat": "战斗",
+  "key.mod_1.combat_toggle": "拔刀/收刀",
+  "key.mod_1.dodge": "闪避",
+  "key.mod_1.inspect": "检视武器"
+}
