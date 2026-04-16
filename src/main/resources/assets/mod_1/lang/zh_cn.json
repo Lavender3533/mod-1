@@ -8,5 +8,16 @@
   "key.categories.mod_1.combat": "战斗",
   "key.mod_1.combat_toggle": "拔刀/收刀",
   "key.mod_1.dodge": "闪避",
-  "key.mod_1.inspect": "检视武器"
+  "key.mod_1.inspect": "检视武器",
+  "subtitles.mod_1.combat.draw_weapon": "拔刀",
+  "subtitles.mod_1.combat.sheath_weapon": "收刀",
+  "subtitles.mod_1.combat.sword_swing": "挥剑",
+  "subtitles.mod_1.combat.sword_heavy": "重击",
+  "subtitles.mod_1.combat.sword_dash": "冲刺攻击",
+  "subtitles.mod_1.combat.spear_thrust": "突刺",
+  "subtitles.mod_1.combat.spear_heavy": "蓄力突刺",
+  "subtitles.mod_1.combat.hit": "命中",
+  "subtitles.mod_1.combat.dodge": "闪避翻滚",
+  "subtitles.mod_1.combat.block": "格挡",
+  "subtitles.mod_1.combat.parry": "完美格挡"
 }

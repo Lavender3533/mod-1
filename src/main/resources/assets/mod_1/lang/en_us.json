@@ -8,5 +8,16 @@
   "key.categories.mod_1.combat": "Combat",
   "key.mod_1.combat_toggle": "Draw/Sheath Weapon",
   "key.mod_1.dodge": "Dodge",
-  "key.mod_1.inspect": "Inspect Weapon"
+  "key.mod_1.inspect": "Inspect Weapon",
+  "subtitles.mod_1.combat.draw_weapon": "Weapon drawn",
+  "subtitles.mod_1.combat.sheath_weapon": "Weapon sheathed",
+  "subtitles.mod_1.combat.sword_swing": "Sword swings",
+  "subtitles.mod_1.combat.sword_heavy": "Sword heavy attack",
+  "subtitles.mod_1.combat.sword_dash": "Sword dash attack",
+  "subtitles.mod_1.combat.spear_thrust": "Spear thrust",
+  "subtitles.mod_1.combat.spear_heavy": "Spear heavy attack",
+  "subtitles.mod_1.combat.hit": "Attack hits",
+  "subtitles.mod_1.combat.dodge": "Dodge roll",
+  "subtitles.mod_1.combat.block": "Attack blocked",
+  "subtitles.mod_1.combat.parry": "Perfect parry"
 }

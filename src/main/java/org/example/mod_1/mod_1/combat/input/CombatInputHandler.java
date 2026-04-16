@@ -39,11 +39,11 @@ public class CombatInputHandler {
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
 
-            // 检视打断：移动/攻击输入时退出 INSPECT
+            // 检视打断：移动/攻击输入时退出 INSPECT，或动画播放完毕自动退出
             if (cap.getState() == CombatState.INSPECT) {
                 double dx = mc.player.getX() - mc.player.xOld;
                 double dz = mc.player.getZ() - mc.player.zOld;
-                if (dx * dx + dz * dz > 0.001) {
+                if (dx * dx + dz * dz > 0.001 || CombatAnimationController.isCurrentAnimFinished()) {
                     requestWithPrediction(cap, CombatState.IDLE);
                 }
             }
@@ -73,6 +73,10 @@ public class CombatInputHandler {
     private static void handleKeyBindings(Minecraft mc) {
         while (CombatKeyBindings.COMBAT_TOGGLE.consumeClick()) {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
+                CombatState current = cap.getState();
+                // Ignore R key during draw/sheath animation to prevent wasted inputs
+                if (current == CombatState.DRAW_WEAPON || current == CombatState.SHEATH_WEAPON) return;
+
                 if (cap.isWeaponDrawn()) {
                     // Sheath — always allowed
                     requestWithPrediction(cap, CombatState.SHEATH_WEAPON);
@@ -89,7 +93,11 @@ public class CombatInputHandler {
 
         while (CombatKeyBindings.DODGE.consumeClick()) {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
-                if (cap.isWeaponDrawn()) requestWithPrediction(cap, CombatState.DODGE);
+                if (cap.isWeaponDrawn() && CombatStateMachine.canTransition(cap, CombatState.DODGE)) {
+                    requestWithPrediction(cap, CombatState.DODGE);
+                    // Apply dodge impulse immediately on client for responsiveness
+                    CombatCapabilityEvents.applyDodgeImpulse(mc.player);
+                }
             });
         }
 

@@ -50,6 +50,7 @@ public class CombatDefenseHandler {
                     event.setAmount(0);
                     cap.setState(CombatState.PARRY);
                     cap.setStateTimer(CombatState.PARRY.getDurationTicks());
+                    CombatSoundPlayer.playParrySound(player);
 
                     Entity attacker = event.getSource().getEntity();
                     if (attacker instanceof LivingEntity living) {
@@ -63,6 +64,7 @@ public class CombatDefenseHandler {
                 } else {
                     float reduced = event.getAmount() * (1.0f - BLOCK_DAMAGE_REDUCTION);
                     event.setAmount(reduced);
+                    CombatSoundPlayer.playBlockSound(player);
                     LOGGER.debug("BLOCK: reduced to {} damage", reduced);
                 }
             }
@@ -83,6 +85,7 @@ public class CombatDefenseHandler {
 
                 cap.setState(CombatState.PARRY);
                 cap.setStateTimer(CombatState.PARRY.getDurationTicks());
+                CombatSoundPlayer.playParrySound(player);
 
                 if (projectile instanceof AbstractArrow arrow && player.level() instanceof ServerLevel serverLevel) {
                     Vec3 lookVec = player.getLookAngle();

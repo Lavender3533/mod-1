@@ -74,6 +74,7 @@ public class CombatDamageHandler {
         for (Entity target : targets) {
             if (target instanceof LivingEntity living) {
                 living.hurt(source, totalDamage);
+                CombatSoundPlayer.playHitSound(player);
                 LOGGER.debug("Combat hit: {} -> {} for {} damage (combo={}, heavy={})",
                         player.getName().getString(), living.getName().getString(),
                         totalDamage, cap.getComboCount(), heavy);

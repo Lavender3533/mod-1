@@ -71,7 +71,7 @@ public class CombatCapabilityEvents {
         }
     }
 
-    private static void applyDodgeImpulse(Player player) {
+    public static void applyDodgeImpulse(Player player) {
         Vec3 moveInput = new Vec3(player.xxa, 0, player.zza);
         Vec3 direction;
         if (moveInput.lengthSqr() > 0.001) {
@@ -84,8 +84,9 @@ public class CombatCapabilityEvents {
                     moveInput.x * sin + moveInput.z * cos
             ).normalize();
         } else {
+            // No movement input → dodge backward (away from look direction)
             float yawRad = (float) Math.toRadians(player.getYRot());
-            direction = new Vec3(Math.sin(yawRad), 0, -Math.cos(yawRad));
+            direction = new Vec3(-Math.sin(yawRad), 0, Math.cos(yawRad));
         }
         player.setDeltaMovement(direction.scale(0.8));
         player.hurtMarked = true;

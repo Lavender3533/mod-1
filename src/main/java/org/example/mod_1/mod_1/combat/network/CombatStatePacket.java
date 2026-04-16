@@ -7,6 +7,7 @@ import net.minecraftforge.event.network.CustomPayloadEvent;
 import net.minecraftforge.network.PacketDistributor;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
+import org.example.mod_1.mod_1.combat.CombatSoundPlayer;
 import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 import org.slf4j.Logger;
 
@@ -39,7 +40,13 @@ public class CombatStatePacket {
         CombatState requested = CombatState.fromOrdinal(msg.stateOrdinal);
 
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
+            CombatState prevState = cap.getState();
             CombatStateMachine.requestTransition(cap, requested);
+
+            // Play sound on successful state transition
+            if (cap.getState() != prevState || cap.getState() == CombatState.ATTACK_LIGHT) {
+                CombatSoundPlayer.playStateSound(player, cap.getState(), cap.getWeaponType(), cap.getComboCount());
+            }
 
             // Broadcast to all tracking players + self
             CombatSyncPacket sync = new CombatSyncPacket(
@@ -47,7 +54,8 @@ public class CombatStatePacket {
                     cap.getState(),
                     cap.getWeaponType(),
                     cap.isWeaponDrawn(),
-                    cap.getComboCount()
+                    cap.getComboCount(),
+                    cap.getStateTimer()
             );
             CombatNetworkChannel.CHANNEL.send(sync,
                     PacketDistributor.TRACKING_ENTITY_AND_SELF.with(player));

@@ -48,6 +48,7 @@ public class CombatAnimationController {
     private static float currentTransitionSecs = TRANSITION_SECS;
     private static float prevAnimFrozenTime = -1.0f;
     private static boolean freezePrevOnNextApply = false;
+    private static boolean currentAnimFinished = false;
 
     private static final Set<String> UPPER_BODY_BONES = Set.of(
             "waist", "chest", "neck", "head",
@@ -208,6 +209,7 @@ public class CombatAnimationController {
             currentAnim = animName;
             currentAnimSpeed = animSpeed;
             animStartNano = System.nanoTime();
+            currentAnimFinished = false;
         } else {
             currentAnimSpeed = animSpeed;
         }
@@ -216,6 +218,10 @@ public class CombatAnimationController {
 
     public static boolean isActive() {
         return active && currentAnim != null;
+    }
+
+    public static boolean isCurrentAnimFinished() {
+        return currentAnimFinished;
     }
 
     /**
@@ -230,8 +236,8 @@ public class CombatAnimationController {
         float timeSec = resolveCurrentTime(state, currentAnim, length, loop, animStartNano, currentAnimSpeed);
 
         if (!loop && timeSec > length) {
-            active = false;
-            return;
+            currentAnimFinished = true;
+            timeSec = length; // Hold last frame pose
         }
         if (loop) timeSec = timeSec % length;
 

@@ -16,13 +16,15 @@ public class CombatSyncPacket {
     private final byte weaponTypeOrdinal;
     private final boolean weaponDrawn;
     private final byte comboCount;
+    private final byte stateTimer;
 
-    public CombatSyncPacket(int entityId, CombatState state, WeaponType weaponType, boolean weaponDrawn, int comboCount) {
+    public CombatSyncPacket(int entityId, CombatState state, WeaponType weaponType, boolean weaponDrawn, int comboCount, int stateTimer) {
         this.entityId = entityId;
         this.stateOrdinal = (byte) state.ordinal();
         this.weaponTypeOrdinal = (byte) weaponType.ordinal();
         this.weaponDrawn = weaponDrawn;
         this.comboCount = (byte) comboCount;
+        this.stateTimer = (byte) Math.min(stateTimer, 127);
     }
 
     public static void encode(CombatSyncPacket msg, RegistryFriendlyByteBuf buf) {
@@ -31,6 +33,7 @@ public class CombatSyncPacket {
         buf.writeByte(msg.weaponTypeOrdinal);
         buf.writeBoolean(msg.weaponDrawn);
         buf.writeByte(msg.comboCount);
+        buf.writeByte(msg.stateTimer);
     }
 
     public static CombatSyncPacket decode(RegistryFriendlyByteBuf buf) {
@@ -39,6 +42,7 @@ public class CombatSyncPacket {
                 CombatState.fromOrdinal(buf.readByte()),
                 WeaponType.fromOrdinal(buf.readByte()),
                 buf.readBoolean(),
+                buf.readByte(),
                 buf.readByte()
         );
     }
@@ -50,11 +54,15 @@ public class CombatSyncPacket {
         Entity entity = mc.level.getEntity(msg.entityId);
         if (!(entity instanceof Player player)) return;
 
+        // Don't override local player's client prediction — only sync other players
+        if (player == mc.player) return;
+
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
             cap.setState(CombatState.fromOrdinal(msg.stateOrdinal));
             cap.setWeaponType(WeaponType.fromOrdinal(msg.weaponTypeOrdinal));
             cap.setWeaponDrawn(msg.weaponDrawn);
             cap.setComboCount(msg.comboCount);
+            cap.setStateTimer(msg.stateTimer);
         });
     }
 }
