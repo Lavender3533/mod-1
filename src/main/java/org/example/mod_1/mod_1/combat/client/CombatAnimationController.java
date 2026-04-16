@@ -7,6 +7,7 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import org.example.mod_1.mod_1.Mod_1;
@@ -33,13 +34,20 @@ public class CombatAnimationController {
     private static String currentAnim = null;
     private static String prevAnim = null;
     private static long animStartNano = 0;
+    private static long prevAnimStartNano = 0;
     private static long transitionStartNano = 0;
+    private static float currentAnimSpeed = 1.0f;
+    private static float prevAnimSpeed = 1.0f;
     private static final int TRANSITION_TICKS = 5;
     private static final float TRANSITION_SECS = TRANSITION_TICKS / 20.0f;
+    private static final float STOP_TRANSITION_SECS = 0.14f;
     private static boolean loaded = false;
     private static boolean active = false;
     private static String lastMovementAnim = "animation.player.idle";
     private static int movementHoldTicks = 0;
+    private static float currentTransitionSecs = TRANSITION_SECS;
+    private static float prevAnimFrozenTime = -1.0f;
+    private static boolean freezePrevOnNextApply = false;
 
     private static final Set<String> UPPER_BODY_BONES = Set.of(
             "waist", "chest", "neck", "head",
@@ -183,13 +191,25 @@ public class CombatAnimationController {
         if (animName == null) {
             currentAnim = null;
             active = false;
+            currentAnimSpeed = 1.0f;
             return;
         }
+        float animSpeed = resolveAnimationSpeed(player, animName);
         if (!animName.equals(currentAnim)) {
-            prevAnim = currentAnim;
+            boolean instantSwitch = shouldInstantSwitch(currentAnim, animName);
+            boolean freezePrevPose = shouldFreezePreviousPose(currentAnim, animName);
+            prevAnim = instantSwitch ? null : currentAnim;
+            prevAnimStartNano = animStartNano;
+            prevAnimSpeed = currentAnimSpeed;
             transitionStartNano = System.nanoTime();
+            currentTransitionSecs = resolveTransitionDuration(currentAnim, animName);
+            prevAnimFrozenTime = -1.0f;
+            freezePrevOnNextApply = !instantSwitch && freezePrevPose;
             currentAnim = animName;
+            currentAnimSpeed = animSpeed;
             animStartNano = System.nanoTime();
+        } else {
+            currentAnimSpeed = animSpeed;
         }
         active = true;
     }
@@ -202,12 +222,12 @@ public class CombatAnimationController {
      * Apply animation directly to 17-bone model via boneMap.
      * No merging needed — each bone gets its own rotation.
      */
-    public static void applyTo17Bones(Map<String, ModelPart> boneMap) {
+    public static void applyTo17Bones(Map<String, ModelPart> boneMap, AvatarRenderState state) {
         if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
 
         float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
         boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
-        float timeSec = (System.nanoTime() - animStartNano) / 1_000_000_000.0f;
+        float timeSec = resolveCurrentTime(state, currentAnim, length, loop, animStartNano, currentAnimSpeed);
 
         if (!loop && timeSec > length) {
             active = false;
@@ -215,21 +235,33 @@ public class CombatAnimationController {
         }
         if (loop) timeSec = timeSec % length;
 
+        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
+        Map<String, List<float[]>> prevBones = prevAnim != null ? ANIM_DATA.get(prevAnim) : null;
+        float prevLength = ANIM_LENGTHS.getOrDefault(prevAnim, 1.0f);
+        boolean prevLoop = ANIM_LOOPS.getOrDefault(prevAnim, false);
+        if (freezePrevOnNextApply && prevAnim != null && state != null) {
+            prevAnimFrozenTime = resolveCurrentTime(state, prevAnim, prevLength, prevLoop, prevAnimStartNano, prevAnimSpeed);
+            freezePrevOnNextApply = false;
+        }
+        float prevTimeSec = prevAnim != null
+                ? (prevAnimFrozenTime >= 0.0f
+                ? prevAnimFrozenTime
+                : resolveCurrentTime(state, prevAnim, prevLength, prevLoop, prevAnimStartNano, prevAnimSpeed))
+                : 0;
+
         // 过渡融合权重
         float transitionAlpha = 1.0f;
         if (prevAnim != null && ANIM_DATA.containsKey(prevAnim)) {
             float transElapsed = (System.nanoTime() - transitionStartNano) / 1_000_000_000.0f;
-            if (transElapsed < TRANSITION_SECS) {
-                transitionAlpha = transElapsed / TRANSITION_SECS;
+            if (transElapsed < currentTransitionSecs) {
+                transitionAlpha = transElapsed / currentTransitionSecs;
             } else {
                 prevAnim = null;
+                prevAnimStartNano = 0;
+                prevAnimFrozenTime = -1.0f;
+                freezePrevOnNextApply = false;
             }
         }
-
-        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
-        Map<String, List<float[]>> prevBones = prevAnim != null ? ANIM_DATA.get(prevAnim) : null;
-        float prevTimeSec = prevAnim != null ?
-                (System.nanoTime() - transitionStartNano) / 1_000_000_000.0f : 0;
 
         for (Map.Entry<String, ModelPart> boneEntry : boneMap.entrySet()) {
             String boneName = boneEntry.getKey();
@@ -417,5 +449,84 @@ public class CombatAnimationController {
             return "animation.player.spear_light";
         }
         return null;
+    }
+
+    private static float resolveAnimationSpeed(AbstractClientPlayer player, String animName) {
+        double dx = player.getX() - player.xOld;
+        double dz = player.getZ() - player.zOld;
+        double horizontalSpeed = Math.sqrt(dx * dx + dz * dz);
+
+        if ("animation.player.walk".equals(animName)) {
+            return clamp((float) (horizontalSpeed / 0.10), 0.72f, 1.18f);
+        }
+        if ("animation.player.run".equals(animName)) {
+            return clamp((float) (horizontalSpeed / 0.17), 0.90f, 1.18f);
+        }
+        return 1.0f;
+    }
+
+    private static boolean isLocomotionAnimation(String animName) {
+        return "animation.player.walk".equals(animName)
+                || "animation.player.run".equals(animName);
+    }
+
+    private static boolean isJumpAnimation(String animName) {
+        return "animation.player.jump".equals(animName);
+    }
+
+    private static boolean isGroundedMovementAnimation(String animName) {
+        return "animation.player.idle".equals(animName) || isLocomotionAnimation(animName);
+    }
+
+    private static boolean shouldUseRecoveryBlend(String fromAnim, String toAnim) {
+        if (fromAnim == null || toAnim == null) {
+            return false;
+        }
+        if (isLocomotionAnimation(fromAnim) && "animation.player.idle".equals(toAnim)) {
+            return true;
+        }
+        return isJumpAnimation(fromAnim) && isGroundedMovementAnimation(toAnim);
+    }
+
+    private static boolean shouldInstantSwitch(String fromAnim, String toAnim) {
+        if (fromAnim == null || toAnim == null) {
+            return true;
+        }
+        if (shouldUseRecoveryBlend(fromAnim, toAnim)) {
+            return false;
+        }
+        return isLocomotionAnimation(fromAnim)
+                || isLocomotionAnimation(toAnim)
+                || "animation.player.idle".equals(fromAnim)
+                || "animation.player.idle".equals(toAnim);
+    }
+
+    private static boolean shouldFreezePreviousPose(String fromAnim, String toAnim) {
+        return shouldUseRecoveryBlend(fromAnim, toAnim);
+    }
+
+    private static float resolveTransitionDuration(String fromAnim, String toAnim) {
+        if (shouldFreezePreviousPose(fromAnim, toAnim)) {
+            return STOP_TRANSITION_SECS;
+        }
+        return TRANSITION_SECS;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static float resolveCurrentTime(AvatarRenderState state, String animName, float length, boolean loop, long startNano, float animSpeed) {
+        if (state != null && isLocomotionAnimation(animName)) {
+            float gaitPhase = state.walkAnimationPos / ((float) (Math.PI * 2.0));
+            gaitPhase = gaitPhase - (float) Math.floor(gaitPhase);
+            return gaitPhase * length;
+        }
+
+        float timeSec = ((System.nanoTime() - startNano) / 1_000_000_000.0f) * animSpeed;
+        if (loop && length > 0.0f) {
+            return timeSec % length;
+        }
+        return timeSec;
     }
 }
