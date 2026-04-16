@@ -165,7 +165,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         // Hat overlay (hidden by default until sizing is resolved)
         head.addOrReplaceChild("hat",
                 CubeListBuilder.create().texOffs(32, 0)
-                        .addBox(-4, -8, -4, 8, 8, 8, new CubeDeformation(0.5F)),
+                        .addBox(-4, -8, -4, 8, 8, 8, new CubeDeformation(0.25F)),
                 PartPose.ZERO);
 
         // === RIGHT ARM (split into upper + lower) ===
@@ -278,10 +278,12 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.leftPants.visible = state.showLeftPants;
 
         if (CombatAnimationController.isActive()) {
-            CombatAnimationController.applyTo17Bones(this.boneMap);
+            CombatAnimationController.applyTo17Bones(this.boneMap, state);
         } else {
             applyVanillaFallback(state);
         }
+
+        applyLookDirection(state);
     }
 
     @Override
@@ -302,9 +304,6 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
     }
 
     private void applyVanillaFallback(AvatarRenderState state) {
-        this.head.xRot = state.xRot * ((float) Math.PI / 180F);
-        this.head.yRot = state.yRot * ((float) Math.PI / 180F);
-
         float walkPos = state.walkAnimationPos;
         float walkSpeed = state.walkAnimationSpeed;
 
@@ -336,5 +335,15 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
             this.rightUpperLeg.xRot -= 0.4F;
             this.leftUpperLeg.xRot -= 0.4F;
         }
+    }
+
+    private void applyLookDirection(AvatarRenderState state) {
+        float pitchRad = state.xRot * ((float) Math.PI / 180F);
+        float yawRad = state.yRot * ((float) Math.PI / 180F);
+
+        this.neck.xRot += pitchRad * 0.25F;
+        this.neck.yRot += yawRad * 0.35F;
+        this.head.xRot += pitchRad * 0.75F;
+        this.head.yRot += yawRad * 0.65F;
     }
 }
