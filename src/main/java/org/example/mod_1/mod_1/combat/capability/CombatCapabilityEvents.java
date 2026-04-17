@@ -64,7 +64,11 @@ public class CombatCapabilityEvents {
                 if (cap.getState() == CombatState.DODGE) {
                     int elapsed = CombatState.DODGE.getDurationTicks() - cap.getStateTimer();
                     if (elapsed == 1) {
-                        applyDodgeImpulse(event.player());
+                        Player p = event.player();
+                        if (p.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+                            org.example.mod_1.mod_1.combat.CombatParticles.spawnDodgeParticles(sl, p.position());
+                        }
+                        applyDodgeImpulse(p);
                     }
                 }
             });

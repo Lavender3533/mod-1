@@ -1,15 +1,13 @@
 package org.example.mod_1.mod_1.combat;
 
 import com.mojang.logging.LogUtils;
+import org.example.mod_1.mod_1.Config;
 import org.example.mod_1.mod_1.combat.capability.ICombatCapability;
 import org.slf4j.Logger;
 
 public class CombatStateMachine {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final int COMBO_WINDOW_TICKS = 10; // 0.5s
-    private static final int DODGE_COOLDOWN_TICKS = 20; // 1.0s
-    private static final int DODGE_INVULN_TICKS = 6; // 前6tick无敌 (0.3s)
 
     public static boolean canTransition(ICombatCapability cap, CombatState target) {
         CombatState current = cap.getState();
@@ -61,10 +59,10 @@ public class CombatStateMachine {
             }
             case ATTACK_LIGHT -> handleLightAttack(cap);
             case DODGE -> {
-                cap.setDodgeCooldown(DODGE_COOLDOWN_TICKS);
-                cap.setDodgeInvulnTicks(DODGE_INVULN_TICKS);
+                cap.setDodgeCooldown(Config.dodgeCooldownTicks);
+                cap.setDodgeInvulnTicks(Config.dodgeInvulnTicks);
             }
-            case BLOCK -> cap.setParryWindowTicks(4); // first 4 ticks = parry window
+            case BLOCK -> cap.setParryWindowTicks(Config.parryWindowTicks); // first N ticks = parry window
             default -> {}
         }
 
@@ -107,7 +105,7 @@ public class CombatStateMachine {
 
         // Combo timeout: reset if idle too long after last attack
         if (state == CombatState.IDLE && cap.getComboCount() > 0) {
-            if (cap.getLastAttackTime() > 0 && gameTime - cap.getLastAttackTime() > COMBO_WINDOW_TICKS) {
+            if (cap.getLastAttackTime() > 0 && gameTime - cap.getLastAttackTime() > Config.comboWindowTicks) {
                 cap.resetCombo();
             }
         }

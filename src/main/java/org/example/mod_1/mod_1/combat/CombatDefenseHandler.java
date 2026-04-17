@@ -18,6 +18,7 @@ import net.minecraftforge.event.entity.ProjectileImpactEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import org.example.mod_1.mod_1.Config;
 import org.example.mod_1.mod_1.Mod_1;
 import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 import org.slf4j.Logger;
@@ -26,8 +27,6 @@ import org.slf4j.Logger;
 public class CombatDefenseHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final float BLOCK_DAMAGE_REDUCTION = 0.6f;
-    private static final float BLOCK_ANGLE = 120.0f;
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
@@ -54,15 +53,18 @@ public class CombatDefenseHandler {
 
                     Entity attacker = event.getSource().getEntity();
                     if (attacker instanceof LivingEntity living) {
-                        living.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 20, 2));
+                        living.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, Config.parrySlownessDuration, Config.parrySlownessAmplifier));
                         living.knockback(0.5f,
                                 player.getX() - living.getX(),
                                 player.getZ() - living.getZ());
                     }
+                    if (player.level() instanceof ServerLevel sl) {
+                        CombatParticles.spawnParryParticles(sl, player.getEyePosition());
+                    }
                     LOGGER.debug("PARRY! {} blocked damage from {}",
                             player.getName().getString(), event.getSource().getMsgId());
                 } else {
-                    float reduced = event.getAmount() * (1.0f - BLOCK_DAMAGE_REDUCTION);
+                    float reduced = event.getAmount() * (1.0f - (float) Config.blockDamageReduction);
                     event.setAmount(reduced);
                     CombatSoundPlayer.playBlockSound(player);
                     LOGGER.debug("BLOCK: reduced to {} damage", reduced);
@@ -99,6 +101,9 @@ public class CombatDefenseHandler {
                         serverLevel.addFreshEntity(reflectedArrow);
                     }
                     arrow.discard();
+                    CombatParticles.spawnParryParticles(serverLevel, player.getEyePosition());
+                } else if (player.level() instanceof ServerLevel serverLevel) {
+                    CombatParticles.spawnParryParticles(serverLevel, player.getEyePosition());
                 }
 
                 LOGGER.debug("PARRY REFLECT: {} reflected projectile", player.getName().getString());
@@ -111,7 +116,7 @@ public class CombatDefenseHandler {
         Vec3 attackDir = source.getSourcePosition().subtract(player.getEyePosition()).normalize();
         Vec3 lookDir = player.getLookAngle();
         double dot = attackDir.x * lookDir.x + attackDir.z * lookDir.z;
-        double cosThreshold = Math.cos(Math.toRadians(BLOCK_ANGLE / 2.0));
+        double cosThreshold = Math.cos(Math.toRadians(Config.blockAngle / 2.0));
         return dot >= cosThreshold;
     }
 }
