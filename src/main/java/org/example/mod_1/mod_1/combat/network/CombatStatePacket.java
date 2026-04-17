@@ -8,6 +8,8 @@ import net.minecraftforge.network.PacketDistributor;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
 import org.example.mod_1.mod_1.combat.CombatSoundPlayer;
+import org.example.mod_1.mod_1.combat.WeaponDetector;
+import org.example.mod_1.mod_1.combat.WeaponType;
 import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 import org.slf4j.Logger;
 
@@ -40,6 +42,14 @@ public class CombatStatePacket {
         CombatState requested = CombatState.fromOrdinal(msg.stateOrdinal);
 
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
+            // Refresh weapon type from actual held item on server side
+            if (requested == CombatState.DRAW_WEAPON) {
+                WeaponType detected = WeaponDetector.detect(player);
+                if (detected != WeaponType.UNARMED) {
+                    cap.setWeaponType(detected);
+                }
+            }
+
             CombatState prevState = cap.getState();
             CombatStateMachine.requestTransition(cap, requested);
 

@@ -115,6 +115,10 @@ public class Mod_1 {
 
         // Register combat HUD overlay
         AddGuiOverlayLayersEvent.BUS.addListener(CombatHudOverlay::register);
+
+        // Register mouse button interceptor (cancel vanilla attack/use when weapon drawn)
+        net.minecraftforge.client.event.InputEvent.MouseButton.Pre.BUS.addListener(
+                org.example.mod_1.mod_1.combat.input.CombatInputHandler::onMouseButton);
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent

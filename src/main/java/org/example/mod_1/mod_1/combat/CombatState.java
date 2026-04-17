@@ -6,13 +6,13 @@ public enum CombatState {
     RUN(2, true, 0),
     CROUCH(3, true, 0),
     JUMP(4, true, 0),
-    DRAW_WEAPON(10, false, 10),
-    SHEATH_WEAPON(10, false, 10),
-    ATTACK_LIGHT(20, false, 8),
-    ATTACK_HEAVY(25, false, 20),
-    DODGE(30, false, 10),
+    DRAW_WEAPON(10, false, 16),
+    SHEATH_WEAPON(10, false, 14),
+    ATTACK_LIGHT(20, false, 14),
+    ATTACK_HEAVY(25, false, 24),
+    DODGE(30, false, 14),
     BLOCK(15, true, 0),
-    PARRY(35, false, 4),
+    PARRY(35, false, 8),
     INSPECT(5, true, 0);
 
     private final int priority;

@@ -10,6 +10,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.entity.player.PlayerModelType;
 import com.mojang.blaze3d.vertex.PoseStack;
+import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 
 public class CombatAvatarRenderer
         extends LivingEntityRenderer<AbstractClientPlayer, AvatarRenderState, CombatPlayerModel> {
@@ -22,7 +23,7 @@ public class CombatAvatarRenderer
         this.wideModel = this.getModel();
         this.slimModel = new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION_SLIM), true);
         this.addLayer(new PlayerItemInHandLayer<>(this));
-        this.addLayer(new BackWeaponLayer(this));
+        this.addLayer(new BackWeaponLayer(this, this.itemModelResolver));
     }
 
     @Override
@@ -48,6 +49,23 @@ public class CombatAvatarRenderer
         state.showRightSleeve = player.isModelPartShown(PlayerModelPart.RIGHT_SLEEVE);
         state.showCape = player.isModelPartShown(PlayerModelPart.CAPE);
         state.id = player.getId();
+
+        // 未拔刀时抑制 PlayerItemInHandLayer 的手持渲染（武器改由 BackWeaponLayer 背上渲染）
+        boolean weaponDrawn = CombatCapabilityEvents.getCombat(player)
+                .map(cap -> cap.isWeaponDrawn())
+                .orElse(false);
+        if (!weaponDrawn) {
+            // BackWeaponLayer 自己通过 capability 拿到主手物品，不依赖这里
+            // 所以我们可以把主手的 itemState 清空，vanilla 的 PlayerItemInHandLayer 就会跳过
+            // 但 rightHandItemState 被子层读取，清空会影响 BackWeaponLayer
+            // 改为只清空 mainArm 侧 — BackWeaponLayer 直接从 player 读取
+            clearHandItem(state);
+        }
+    }
+
+    private static void clearHandItem(AvatarRenderState state) {
+        if (state.rightHandItemState != null) state.rightHandItemState.clear();
+        if (state.leftHandItemState != null) state.leftHandItemState.clear();
     }
 
     @Override
