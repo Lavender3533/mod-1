@@ -4,7 +4,6 @@ package org.example.mod_1.mod_1.combat.item;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ToolMaterial;
 import net.minecraftforge.registries.DeferredRegister;
@@ -23,15 +22,6 @@ public class ModItems {
 
     private static RegistryObject<Item> registerSword(String name, ToolMaterial material, float attackDamage, float attackSpeed) {
         return ITEMS.register(name, () -> new CombatSwordItem(
-                material.applySwordProperties(
-                        new Item.Properties().setId(key(name)),
-                        attackDamage, attackSpeed
-                )
-        ));
-    }
-
-    private static RegistryObject<Item> registerSpear(String name, ToolMaterial material, float attackDamage, float attackSpeed) {
-        return ITEMS.register(name, () -> new CombatSpearItem(
                 material.applySwordProperties(
                         new Item.Properties().setId(key(name)),
                         attackDamage, attackSpeed
@@ -60,28 +50,5 @@ public class ModItems {
     public static final RegistryObject<Item>[] ALL_SWORDS = new RegistryObject[]{
             COMBAT_WOOD_SWORD, COMBAT_STONE_SWORD, COMBAT_IRON_SWORD,
             COMBAT_GOLD_SWORD, COMBAT_DIAMOND_SWORD, COMBAT_NETHERITE_SWORD
-    };
-
-    public static final RegistryObject<Item> COMBAT_WOOD_SPEAR =
-            registerSpear("combat_wood_spear", ToolMaterial.WOOD, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item> COMBAT_STONE_SPEAR =
-            registerSpear("combat_stone_spear", ToolMaterial.STONE, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item> COMBAT_IRON_SPEAR =
-            registerSpear("combat_iron_spear", ToolMaterial.IRON, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item> COMBAT_GOLD_SPEAR =
-            registerSpear("combat_gold_spear", ToolMaterial.GOLD, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item> COMBAT_DIAMOND_SPEAR =
-            registerSpear("combat_diamond_spear", ToolMaterial.DIAMOND, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item> COMBAT_NETHERITE_SPEAR =
-            registerSpear("combat_netherite_spear", ToolMaterial.NETHERITE, 4.0f, -2.8f);
-
-    public static final RegistryObject<Item>[] ALL_SPEARS = new RegistryObject[]{
-            COMBAT_WOOD_SPEAR, COMBAT_STONE_SPEAR, COMBAT_IRON_SPEAR,
-            COMBAT_GOLD_SPEAR, COMBAT_DIAMOND_SPEAR, COMBAT_NETHERITE_SPEAR
     };
 }

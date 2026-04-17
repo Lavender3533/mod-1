@@ -10,7 +10,6 @@ import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.example.mod_1.mod_1.Mod_1;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
@@ -22,17 +21,17 @@ import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.example.mod_1.mod_1.combat.network.CombatStatePacket;
 import net.minecraftforge.network.PacketDistributor;
+import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 
 @Mod.EventBusSubscriber(modid = Mod_1.MODID, bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
 public class CombatInputHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int BLOCK_HOLD_THRESHOLD = 3;
     private static boolean forcedThirdPerson = false;
     private static int blockHoldTicks = 0;
-    private static boolean rightMouseHeld = false;
-    private static boolean leftMouseDownPrev = false;
-    private static boolean rightMouseDownPrev = false;
+    private static boolean rightMousePressed = false;
 
     /**
      * 拦截鼠标点击 — 拔刀后左右键改为战斗系统处理，不让 vanilla 处理。
@@ -46,8 +45,40 @@ public class CombatInputHandler {
             if (!cap.isWeaponDrawn()) return false;
 
             int button = event.getButton();
-            return button == InputConstants.MOUSE_BUTTON_LEFT
-                    || button == InputConstants.MOUSE_BUTTON_RIGHT;
+            int action = event.getAction();
+            boolean press = action == GLFW.GLFW_PRESS;
+            boolean release = action == GLFW.GLFW_RELEASE;
+
+            if (button == InputConstants.MOUSE_BUTTON_LEFT) {
+                if (press) {
+                    // 左键按下：触发轻攻击（冲刺时变冲刺攻击）
+                    if (mc.player.isSprinting() && cap.getWeaponType() == WeaponType.SWORD) {
+                        cap.setComboCount(99);
+                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                    } else {
+                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                    }
+                }
+                return true; // 总是取消 vanilla 左键（无论按下/松开/重复）
+            }
+
+            if (button == InputConstants.MOUSE_BUTTON_RIGHT) {
+                if (press) {
+                    rightMousePressed = true;
+                    blockHoldTicks = 0;
+                } else if (release && rightMousePressed) {
+                    rightMousePressed = false;
+                    if (blockHoldTicks <= BLOCK_HOLD_THRESHOLD) {
+                        requestWithPrediction(cap, CombatState.ATTACK_HEAVY);
+                    } else if (cap.getState() == CombatState.BLOCK) {
+                        requestWithPrediction(cap, CombatState.IDLE);
+                    }
+                    blockHoldTicks = 0;
+                }
+                return true;
+            }
+
+            return false;
         }).orElse(false);
     }
 
@@ -72,25 +103,17 @@ public class CombatInputHandler {
 
             updateCamera(cap);
 
-            // 先处理攻击/右键输入，保证 state 转换在本tick内被动画看到
+            // 右键长按计时：用于区分 ATTACK_HEAVY（短按）和 BLOCK（长按）
+            // 左键由 onMouseButton 直接处理，不经过 tick
             if (cap.isWeaponDrawn()) {
-                // 左键：边沿检测（从未按→按下 = 一次点击）
-                boolean leftDown = mc.options.keyAttack.isDown();
-                if (leftDown && !leftMouseDownPrev) {
-                    if (mc.player.isSprinting() && cap.getWeaponType() == WeaponType.SWORD) {
-                        cap.setComboCount(99);
-                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
-                    } else {
-                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                if (rightMousePressed) {
+                    blockHoldTicks++;
+                    if (blockHoldTicks > BLOCK_HOLD_THRESHOLD && cap.getState() != CombatState.BLOCK) {
+                        requestWithPrediction(cap, CombatState.BLOCK);
                     }
                 }
-                leftMouseDownPrev = leftDown;
-
-                handleRightClick(mc, cap);
             } else {
-                leftMouseDownPrev = false;
-                rightMouseDownPrev = false;
-                rightMouseHeld = false;
+                rightMousePressed = false;
                 blockHoldTicks = 0;
             }
 
@@ -136,29 +159,6 @@ public class CombatInputHandler {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
                 if (cap.isWeaponDrawn()) requestWithPrediction(cap, CombatState.INSPECT);
             });
-        }
-    }
-
-    private static void handleRightClick(Minecraft mc, ICombatCapability cap) {
-        boolean pressed = mc.options.keyUse.isDown();
-
-        if (pressed) {
-            if (!rightMouseHeld) {
-                rightMouseHeld = true;
-                blockHoldTicks = 0;
-            }
-            blockHoldTicks++;
-            if (blockHoldTicks > 3 && cap.getState() != CombatState.BLOCK) {
-                requestWithPrediction(cap, CombatState.BLOCK);
-            }
-        } else if (rightMouseHeld) {
-            rightMouseHeld = false;
-            if (blockHoldTicks <= 3) {
-                requestWithPrediction(cap, CombatState.ATTACK_HEAVY);
-            } else if (cap.getState() == CombatState.BLOCK) {
-                requestWithPrediction(cap, CombatState.IDLE);
-            }
-            blockHoldTicks = 0;
         }
     }
 

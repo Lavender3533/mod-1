@@ -139,9 +139,6 @@ public class Mod_1 {
                 for (var sword : ModItems.ALL_SWORDS) {
                     event.accept(sword);
                 }
-                for (var spear : ModItems.ALL_SPEARS) {
-                    event.accept(spear);
-                }
             }
         }
     }
