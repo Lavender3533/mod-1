@@ -30,6 +30,8 @@ public class CombatInputHandler {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int BLOCK_HOLD_THRESHOLD = 3;
     private static boolean forcedThirdPerson = false;
+    private static boolean inspectCameraActive = false;
+    private static CameraType cameraBeforeInspect = CameraType.FIRST_PERSON;
     private static int blockHoldTicks = 0;
     private static boolean rightMousePressed = false;
 
@@ -175,6 +177,27 @@ public class CombatInputHandler {
     private static void updateCamera(ICombatCapability cap) {
         Minecraft mc = Minecraft.getInstance();
         CombatState state = cap.getState();
+
+        // 检视时强制第一人称，检视结束后恢复原视角
+        if (state == CombatState.INSPECT && cap.isWeaponDrawn()) {
+            if (!inspectCameraActive) {
+                cameraBeforeInspect = mc.options.getCameraType();
+                inspectCameraActive = true;
+            }
+            if (mc.options.getCameraType() != CameraType.FIRST_PERSON) {
+                mc.options.setCameraType(CameraType.FIRST_PERSON);
+            }
+            forcedThirdPerson = false;
+            return;
+        }
+
+        if (inspectCameraActive) {
+            if (mc.options.getCameraType() != cameraBeforeInspect) {
+                mc.options.setCameraType(cameraBeforeInspect);
+            }
+            inspectCameraActive = false;
+            forcedThirdPerson = cameraBeforeInspect != CameraType.FIRST_PERSON;
+        }
 
         // 进入第三人称的条件：已拔刀 或 正在拔刀 或 正在收刀（让玩家看到收刀全程）
         boolean shouldBeThirdPerson = cap.isWeaponDrawn()
