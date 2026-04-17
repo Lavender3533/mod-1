@@ -13,9 +13,12 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 import net.minecraftforge.fml.LogicalSide;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.network.PacketDistributor;
 import org.example.mod_1.mod_1.Mod_1;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
+import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
+import org.example.mod_1.mod_1.combat.network.CombatSyncPacket;
 import org.slf4j.Logger;
 import net.minecraft.world.phys.Vec3;
 
@@ -59,6 +62,11 @@ public class CombatCapabilityEvents {
     public static void onPlayerTick(TickEvent.PlayerTickEvent.Post event) {
         if (event.side() == LogicalSide.SERVER) {
             getCombat(event.player()).ifPresent(cap -> {
+                CombatState prevState = cap.getState();
+                boolean prevWeaponDrawn = cap.isWeaponDrawn();
+                int prevComboCount = cap.getComboCount();
+                int prevStateTimer = cap.getStateTimer();
+
                 CombatStateMachine.tick(cap, event.player().level().getGameTime());
 
                 if (cap.getState() == CombatState.DODGE) {
@@ -70,6 +78,22 @@ public class CombatCapabilityEvents {
                         }
                         applyDodgeImpulse(p);
                     }
+                }
+
+                if (prevState != cap.getState()
+                        || prevWeaponDrawn != cap.isWeaponDrawn()
+                        || prevComboCount != cap.getComboCount()
+                        || (prevStateTimer > 0 && cap.getStateTimer() == 0)) {
+                    CombatSyncPacket sync = new CombatSyncPacket(
+                            event.player().getId(),
+                            cap.getState(),
+                            cap.getWeaponType(),
+                            cap.isWeaponDrawn(),
+                            cap.getComboCount(),
+                            cap.getStateTimer()
+                    );
+                    CombatNetworkChannel.CHANNEL.send(sync,
+                            PacketDistributor.TRACKING_ENTITY_AND_SELF.with(event.player()));
                 }
             });
         }
