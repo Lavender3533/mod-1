@@ -25,48 +25,30 @@ public class CombatAnimationController {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final float DEG_TO_RAD = (float) (Math.PI / 180.0);
+    private static final float TRANSITION_SECS = 0.18f;
+    private static final float LOCOMOTION_TRANSITION_SECS = 0.10f;
+    private static final float STOP_TRANSITION_SECS = 0.14f;
 
     // animName -> boneName -> keyframes [time, rx, ry, rz]
     private static final Map<String, Map<String, List<float[]>>> ANIM_DATA = new HashMap<>();
     private static final Map<String, Float> ANIM_LENGTHS = new HashMap<>();
     private static final Map<String, Boolean> ANIM_LOOPS = new HashMap<>();
-
-    private static String currentAnim = null;
-    private static String prevAnim = null;
-    private static long animStartNano = 0;
-    private static long prevAnimStartNano = 0;
-    private static long transitionStartNano = 0;
-    private static float currentAnimSpeed = 1.0f;
-    private static float prevAnimSpeed = 1.0f;
-    private static final int TRANSITION_TICKS = 5;
-    private static final float TRANSITION_SECS = TRANSITION_TICKS / 20.0f;
-    private static final float STOP_TRANSITION_SECS = 0.14f;
     private static boolean loaded = false;
-    private static boolean active = false;
-    private static String lastMovementAnim = "animation.player.idle";
-    private static int movementHoldTicks = 0;
-    private static float currentTransitionSecs = TRANSITION_SECS;
-    private static float prevAnimFrozenTime = -1.0f;
-    private static boolean freezePrevOnNextApply = false;
-    private static boolean currentAnimFinished = false;
+    private static final Map<Integer, AnimationRuntime> RUNTIMES = new HashMap<>();
 
-    private static final Set<String> UPPER_BODY_BONES = Set.of(
-            "waist", "chest", "neck", "head",
-            "rightUpperArm", "rightLowerArm", "rightHand",
-            "right_upper_arm", "right_lower_arm",
-            "leftUpperArm", "leftLowerArm", "leftHand",
-            "left_upper_arm", "left_lower_arm"
+    // 上半身专属动作：攻击/格挡/招架。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
+    private static final Set<CombatState> UPPER_BODY_ONLY_STATES = EnumSet.of(
+            CombatState.ATTACK_LIGHT,
+            CombatState.ATTACK_HEAVY,
+            CombatState.BLOCK,
+            CombatState.PARRY
     );
+
     private static final Set<String> LOWER_BODY_BONES = Set.of(
             "hip",
             "rightUpperLeg", "rightLowerLeg",
-            "right_upper_leg", "right_lower_leg",
-            "leftUpperLeg", "leftLowerLeg",
-            "left_upper_leg", "left_lower_leg"
+            "leftUpperLeg", "leftLowerLeg"
     );
-
-    private static String currentMovementAnim = "animation.player.idle";
-    private static String currentCombatAnim = null;
 
     // 17→6 bone merge mapping: child bones whose rotations get ADDED to a target vanilla bone
     private static final Map<String, String> BONE_TO_VANILLA = Map.ofEntries(
@@ -118,6 +100,36 @@ public class CombatAnimationController {
 
     public static void init() {
         LOGGER.info("Combat animation controller initialized (17-bone merge engine)");
+    }
+
+    private static final class AnimationRuntime {
+        // Upper layer (or full body when no override active)
+        private String currentAnim = null;
+        private String prevAnim = null;
+        private long animStartNano = 0L;
+        private long prevAnimStartNano = 0L;
+        private long transitionStartNano = 0L;
+        private float currentAnimSpeed = 1.0f;
+        private float prevAnimSpeed = 1.0f;
+        private boolean active = false;
+        private String lastMovementAnim = "animation.player.idle";
+        private int movementHoldTicks = 0;
+        private float currentTransitionSecs = TRANSITION_SECS;
+        private float prevAnimFrozenTime = -1.0f;
+        private boolean freezePrevOnNextApply = false;
+        private boolean currentAnimFinished = false;
+
+        // Lower layer (only active during upper-body-only combat states)
+        private String lowerCurrentAnim = null;
+        private String lowerPrevAnim = null;
+        private long lowerAnimStartNano = 0L;
+        private long lowerPrevAnimStartNano = 0L;
+        private long lowerTransitionStartNano = 0L;
+        private float lowerCurrentAnimSpeed = 1.0f;
+        private float lowerPrevAnimSpeed = 1.0f;
+        private float lowerCurrentTransitionSecs = LOCOMOTION_TRANSITION_SECS;
+        private float lowerPrevAnimFrozenTime = -1.0f;
+        private boolean lowerFreezePrevOnNextApply = false;
     }
 
 
@@ -178,6 +190,7 @@ public class CombatAnimationController {
 
     public static void updateAnimation(AbstractClientPlayer player, ICombatCapability cap) {
         loadAnimations();
+        AnimationRuntime runtime = getRuntime(player);
 
         // 检视打断：移动时自动退出 INSPECT
         if (cap.getState() == CombatState.INSPECT) {
@@ -188,84 +201,181 @@ public class CombatAnimationController {
             }
         }
 
-        String animName = resolveAnimationName(player, cap);
+        String animName = resolveAnimationName(player, cap, runtime);
         if (animName == null) {
-            currentAnim = null;
-            active = false;
-            currentAnimSpeed = 1.0f;
+            runtime.currentAnim = null;
+            runtime.prevAnim = null;
+            runtime.active = false;
+            runtime.currentAnimSpeed = 1.0f;
+            runtime.currentAnimFinished = false;
+            clearLowerLayer(runtime);
             return;
         }
         float animSpeed = resolveAnimationSpeed(player, animName);
-        if (!animName.equals(currentAnim)) {
-            boolean instantSwitch = shouldInstantSwitch(currentAnim, animName);
-            boolean freezePrevPose = shouldFreezePreviousPose(currentAnim, animName);
-            prevAnim = instantSwitch ? null : currentAnim;
-            prevAnimStartNano = animStartNano;
-            prevAnimSpeed = currentAnimSpeed;
-            transitionStartNano = System.nanoTime();
-            currentTransitionSecs = resolveTransitionDuration(currentAnim, animName);
-            prevAnimFrozenTime = -1.0f;
-            freezePrevOnNextApply = !instantSwitch && freezePrevPose;
-            currentAnim = animName;
-            currentAnimSpeed = animSpeed;
-            animStartNano = System.nanoTime();
-            currentAnimFinished = false;
+        if (!animName.equals(runtime.currentAnim)) {
+            boolean instantSwitch = shouldInstantSwitch(runtime.currentAnim, animName);
+            boolean freezePrevPose = shouldFreezePreviousPose(runtime.currentAnim, animName);
+            runtime.prevAnim = instantSwitch ? null : runtime.currentAnim;
+            runtime.prevAnimStartNano = runtime.animStartNano;
+            runtime.prevAnimSpeed = runtime.currentAnimSpeed;
+            runtime.transitionStartNano = System.nanoTime();
+            runtime.currentTransitionSecs = resolveTransitionDuration(runtime.currentAnim, animName);
+            runtime.prevAnimFrozenTime = -1.0f;
+            runtime.freezePrevOnNextApply = !instantSwitch && freezePrevPose;
+            runtime.currentAnim = animName;
+            runtime.currentAnimSpeed = animSpeed;
+            runtime.animStartNano = System.nanoTime();
+            runtime.currentAnimFinished = false;
         } else {
-            currentAnimSpeed = animSpeed;
+            runtime.currentAnimSpeed = animSpeed;
         }
-        active = true;
+        runtime.active = true;
+
+        updateLowerLayer(player, cap, runtime);
     }
 
-    public static boolean isActive() {
-        return active && currentAnim != null;
+    private static void updateLowerLayer(AbstractClientPlayer player, ICombatCapability cap, AnimationRuntime runtime) {
+        if (!UPPER_BODY_ONLY_STATES.contains(cap.getState())) {
+            // Drop lower layer instantly — upper layer will cover all bones
+            clearLowerLayer(runtime);
+            return;
+        }
+
+        String lowerAnim = resolveLocomotionAnim(player, cap, runtime);
+        if (lowerAnim == null) {
+            clearLowerLayer(runtime);
+            return;
+        }
+        float lowerSpeed = resolveAnimationSpeed(player, lowerAnim);
+
+        if (!lowerAnim.equals(runtime.lowerCurrentAnim)) {
+            boolean firstActivation = runtime.lowerCurrentAnim == null;
+            // Locomotion anims are phase-locked to walkAnimationPos so first activation needs no transition
+            runtime.lowerPrevAnim = firstActivation ? null : runtime.lowerCurrentAnim;
+            runtime.lowerPrevAnimStartNano = runtime.lowerAnimStartNano;
+            runtime.lowerPrevAnimSpeed = runtime.lowerCurrentAnimSpeed;
+            runtime.lowerTransitionStartNano = System.nanoTime();
+            runtime.lowerCurrentTransitionSecs = firstActivation
+                    ? 0.0f
+                    : resolveTransitionDuration(runtime.lowerCurrentAnim, lowerAnim);
+            runtime.lowerPrevAnimFrozenTime = -1.0f;
+            runtime.lowerFreezePrevOnNextApply = !firstActivation
+                    && shouldFreezePreviousPose(runtime.lowerCurrentAnim, lowerAnim);
+            runtime.lowerCurrentAnim = lowerAnim;
+            runtime.lowerCurrentAnimSpeed = lowerSpeed;
+            runtime.lowerAnimStartNano = System.nanoTime();
+        } else {
+            runtime.lowerCurrentAnimSpeed = lowerSpeed;
+        }
     }
 
-    public static boolean isCurrentAnimFinished() {
-        return currentAnimFinished;
+    private static void clearLowerLayer(AnimationRuntime runtime) {
+        runtime.lowerCurrentAnim = null;
+        runtime.lowerPrevAnim = null;
+        runtime.lowerAnimStartNano = 0L;
+        runtime.lowerPrevAnimStartNano = 0L;
+        runtime.lowerTransitionStartNano = 0L;
+        runtime.lowerCurrentAnimSpeed = 1.0f;
+        runtime.lowerPrevAnimSpeed = 1.0f;
+        runtime.lowerPrevAnimFrozenTime = -1.0f;
+        runtime.lowerFreezePrevOnNextApply = false;
+    }
+
+    public static boolean isActive(AvatarRenderState state) {
+        AnimationRuntime runtime = getRuntime(state);
+        return runtime != null && runtime.active && runtime.currentAnim != null;
+    }
+
+    public static boolean isCurrentAnimFinished(AbstractClientPlayer player) {
+        AnimationRuntime runtime = getRuntime(player);
+        return runtime.currentAnimFinished;
     }
 
     /**
      * Apply animation directly to 17-bone model via boneMap.
-     * No merging needed — each bone gets its own rotation.
+     * Upper layer covers all bones unless a lower layer is active — then lower layer covers
+     * hip/legs while upper layer covers everything else.
      */
     public static void applyTo17Bones(Map<String, ModelPart> boneMap, AvatarRenderState state) {
-        if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
+        AnimationRuntime runtime = getRuntime(state);
+        if (runtime == null || !runtime.active || runtime.currentAnim == null || !ANIM_DATA.containsKey(runtime.currentAnim)) {
+            return;
+        }
 
-        float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
-        boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
-        float timeSec = resolveCurrentTime(state, currentAnim, length, loop, animStartNano, currentAnimSpeed);
+        // Upper layer prep
+        float length = ANIM_LENGTHS.getOrDefault(runtime.currentAnim, 1.0f);
+        boolean loop = ANIM_LOOPS.getOrDefault(runtime.currentAnim, false);
+        float timeSec = resolveCurrentTime(state, runtime.currentAnim, length, loop, runtime.animStartNano, runtime.currentAnimSpeed);
 
         if (!loop && timeSec > length) {
-            currentAnimFinished = true;
+            runtime.currentAnimFinished = true;
             timeSec = length; // Hold last frame pose
         }
         if (loop) timeSec = timeSec % length;
 
-        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
-        Map<String, List<float[]>> prevBones = prevAnim != null ? ANIM_DATA.get(prevAnim) : null;
-        float prevLength = ANIM_LENGTHS.getOrDefault(prevAnim, 1.0f);
-        boolean prevLoop = ANIM_LOOPS.getOrDefault(prevAnim, false);
-        if (freezePrevOnNextApply && prevAnim != null && state != null) {
-            prevAnimFrozenTime = resolveCurrentTime(state, prevAnim, prevLength, prevLoop, prevAnimStartNano, prevAnimSpeed);
-            freezePrevOnNextApply = false;
+        Map<String, List<float[]>> bones = ANIM_DATA.get(runtime.currentAnim);
+        Map<String, List<float[]>> prevBones = runtime.prevAnim != null ? ANIM_DATA.get(runtime.prevAnim) : null;
+        float prevLength = ANIM_LENGTHS.getOrDefault(runtime.prevAnim, 1.0f);
+        boolean prevLoop = ANIM_LOOPS.getOrDefault(runtime.prevAnim, false);
+        if (runtime.freezePrevOnNextApply && runtime.prevAnim != null && state != null) {
+            runtime.prevAnimFrozenTime = resolveCurrentTime(state, runtime.prevAnim, prevLength, prevLoop, runtime.prevAnimStartNano, runtime.prevAnimSpeed);
+            runtime.freezePrevOnNextApply = false;
         }
-        float prevTimeSec = prevAnim != null
-                ? (prevAnimFrozenTime >= 0.0f
-                ? prevAnimFrozenTime
-                : resolveCurrentTime(state, prevAnim, prevLength, prevLoop, prevAnimStartNano, prevAnimSpeed))
+        float prevTimeSec = runtime.prevAnim != null
+                ? (runtime.prevAnimFrozenTime >= 0.0f
+                ? runtime.prevAnimFrozenTime
+                : resolveCurrentTime(state, runtime.prevAnim, prevLength, prevLoop, runtime.prevAnimStartNano, runtime.prevAnimSpeed))
                 : 0;
 
-        // 过渡融合权重
         float transitionAlpha = 1.0f;
-        if (prevAnim != null && ANIM_DATA.containsKey(prevAnim)) {
-            float transElapsed = (System.nanoTime() - transitionStartNano) / 1_000_000_000.0f;
-            if (transElapsed < currentTransitionSecs) {
-                transitionAlpha = transElapsed / currentTransitionSecs;
+        if (runtime.prevAnim != null && ANIM_DATA.containsKey(runtime.prevAnim)) {
+            float transElapsed = (System.nanoTime() - runtime.transitionStartNano) / 1_000_000_000.0f;
+            if (transElapsed < runtime.currentTransitionSecs) {
+                transitionAlpha = smoothStep01(transElapsed / runtime.currentTransitionSecs);
             } else {
-                prevAnim = null;
-                prevAnimStartNano = 0;
-                prevAnimFrozenTime = -1.0f;
-                freezePrevOnNextApply = false;
+                runtime.prevAnim = null;
+                runtime.prevAnimStartNano = 0L;
+                runtime.prevAnimFrozenTime = -1.0f;
+                runtime.freezePrevOnNextApply = false;
+            }
+        }
+
+        // Lower layer prep (only when an upper-body-only combat state is active)
+        boolean lowerActive = runtime.lowerCurrentAnim != null && ANIM_DATA.containsKey(runtime.lowerCurrentAnim);
+        Map<String, List<float[]>> lowerBones = null;
+        Map<String, List<float[]>> lowerPrevBones = null;
+        float lowerTimeSec = 0f, lowerPrevTimeSec = 0f, lowerPrevLength = 1f, lowerTransitionAlpha = 1f;
+        boolean lowerPrevLoop = false;
+        if (lowerActive) {
+            float lowerLength = ANIM_LENGTHS.getOrDefault(runtime.lowerCurrentAnim, 1.0f);
+            boolean lowerLoop = ANIM_LOOPS.getOrDefault(runtime.lowerCurrentAnim, false);
+            lowerTimeSec = resolveCurrentTime(state, runtime.lowerCurrentAnim, lowerLength, lowerLoop, runtime.lowerAnimStartNano, runtime.lowerCurrentAnimSpeed);
+            if (!lowerLoop && lowerTimeSec > lowerLength) lowerTimeSec = lowerLength;
+            if (lowerLoop) lowerTimeSec = lowerTimeSec % lowerLength;
+
+            lowerBones = ANIM_DATA.get(runtime.lowerCurrentAnim);
+            lowerPrevBones = runtime.lowerPrevAnim != null ? ANIM_DATA.get(runtime.lowerPrevAnim) : null;
+            lowerPrevLength = ANIM_LENGTHS.getOrDefault(runtime.lowerPrevAnim, 1.0f);
+            lowerPrevLoop = ANIM_LOOPS.getOrDefault(runtime.lowerPrevAnim, false);
+            if (runtime.lowerFreezePrevOnNextApply && runtime.lowerPrevAnim != null && state != null) {
+                runtime.lowerPrevAnimFrozenTime = resolveCurrentTime(state, runtime.lowerPrevAnim, lowerPrevLength, lowerPrevLoop, runtime.lowerPrevAnimStartNano, runtime.lowerPrevAnimSpeed);
+                runtime.lowerFreezePrevOnNextApply = false;
+            }
+            lowerPrevTimeSec = runtime.lowerPrevAnim != null
+                    ? (runtime.lowerPrevAnimFrozenTime >= 0.0f
+                    ? runtime.lowerPrevAnimFrozenTime
+                    : resolveCurrentTime(state, runtime.lowerPrevAnim, lowerPrevLength, lowerPrevLoop, runtime.lowerPrevAnimStartNano, runtime.lowerPrevAnimSpeed))
+                    : 0f;
+            if (runtime.lowerPrevAnim != null && ANIM_DATA.containsKey(runtime.lowerPrevAnim)) {
+                float trans = (System.nanoTime() - runtime.lowerTransitionStartNano) / 1_000_000_000.0f;
+                if (trans < runtime.lowerCurrentTransitionSecs) {
+                    lowerTransitionAlpha = smoothStep01(trans / runtime.lowerCurrentTransitionSecs);
+                } else {
+                    runtime.lowerPrevAnim = null;
+                    runtime.lowerPrevAnimStartNano = 0L;
+                    runtime.lowerPrevAnimFrozenTime = -1.0f;
+                    runtime.lowerFreezePrevOnNextApply = false;
+                }
             }
         }
 
@@ -273,20 +383,28 @@ public class CombatAnimationController {
             String boneName = boneEntry.getKey();
             ModelPart part = boneEntry.getValue();
 
-            List<float[]> kfs = bones.get(boneName);
+            boolean useLower = lowerActive && LOWER_BODY_BONES.contains(boneName);
+            Map<String, List<float[]>> srcBones = useLower ? lowerBones : bones;
+            Map<String, List<float[]>> srcPrevBones = useLower ? lowerPrevBones : prevBones;
+            float srcTime = useLower ? lowerTimeSec : timeSec;
+            float srcPrevTime = useLower ? lowerPrevTimeSec : prevTimeSec;
+            float srcPrevLength = useLower ? lowerPrevLength : prevLength;
+            boolean srcPrevLoop = useLower ? lowerPrevLoop : prevLoop;
+            float srcAlpha = useLower ? lowerTransitionAlpha : transitionAlpha;
+
+            List<float[]> kfs = srcBones.get(boneName);
             if (kfs == null) continue;
 
-            float[] rot = interpolate(kfs, timeSec);
+            float[] rot = interpolate(kfs, srcTime);
 
-            if (prevBones != null && transitionAlpha < 1.0f) {
-                List<float[]> prevKfs = prevBones.get(boneName);
+            if (srcPrevBones != null && srcAlpha < 1.0f) {
+                List<float[]> prevKfs = srcPrevBones.get(boneName);
                 if (prevKfs != null) {
-                    float prevLen = ANIM_LENGTHS.getOrDefault(prevAnim, 1.0f);
-                    float prevT = prevLen > 0 ? prevTimeSec % prevLen : 0;
+                    float prevT = sampleAnimationTime(srcPrevTime, srcPrevLength, srcPrevLoop);
                     float[] prevRot = interpolate(prevKfs, prevT);
-                    rot[0] = prevRot[0] + (rot[0] - prevRot[0]) * transitionAlpha;
-                    rot[1] = prevRot[1] + (rot[1] - prevRot[1]) * transitionAlpha;
-                    rot[2] = prevRot[2] + (rot[2] - prevRot[2]) * transitionAlpha;
+                    rot[0] = prevRot[0] + (rot[0] - prevRot[0]) * srcAlpha;
+                    rot[1] = prevRot[1] + (rot[1] - prevRot[1]) * srcAlpha;
+                    rot[2] = prevRot[2] + (rot[2] - prevRot[2]) * srcAlpha;
                 }
             }
 
@@ -298,21 +416,27 @@ public class CombatAnimationController {
 
     /**
      * Called from Mixin after vanilla setupAnim (6-bone fallback).
+     * When the lower layer is active, leg bones are sampled from the lower anim instead.
      */
-    public static void applyToBones(ModelPart head, ModelPart body, ModelPart rightArm, ModelPart leftArm, ModelPart rightLeg, ModelPart leftLeg) {
-        if (!active || currentAnim == null || !ANIM_DATA.containsKey(currentAnim)) return;
+    public static void applyToBones(ModelPart head, ModelPart body, ModelPart rightArm, ModelPart leftArm,
+                                    ModelPart rightLeg, ModelPart leftLeg, AvatarRenderState state) {
+        AnimationRuntime runtime = getRuntime(state);
+        if (runtime == null || !runtime.active || runtime.currentAnim == null || !ANIM_DATA.containsKey(runtime.currentAnim)) {
+            return;
+        }
 
-        float length = ANIM_LENGTHS.getOrDefault(currentAnim, 1.0f);
-        boolean loop = ANIM_LOOPS.getOrDefault(currentAnim, false);
-        float timeSec = (System.nanoTime() - animStartNano) / 1_000_000_000.0f;
+        float length = ANIM_LENGTHS.getOrDefault(runtime.currentAnim, 1.0f);
+        boolean loop = ANIM_LOOPS.getOrDefault(runtime.currentAnim, false);
+        float timeSec = resolveCurrentTime(state, runtime.currentAnim, length, loop, runtime.animStartNano, runtime.currentAnimSpeed);
 
         if (!loop && timeSec > length) {
-            active = false;
-            return;
+            timeSec = length;
         }
         if (loop) timeSec = timeSec % length;
 
-        Map<String, List<float[]>> bones = ANIM_DATA.get(currentAnim);
+        Map<String, List<float[]>> bones = ANIM_DATA.get(runtime.currentAnim);
+
+        boolean lowerActive = runtime.lowerCurrentAnim != null && ANIM_DATA.containsKey(runtime.lowerCurrentAnim);
 
         // Accumulate rotations from all 17 bones into the 6 vanilla parts
         float[] headRot = {0, 0, 0}, bodyRot = {0, 0, 0};
@@ -323,6 +447,8 @@ public class CombatAnimationController {
             String boneName = entry.getKey();
             String target = BONE_TO_VANILLA.get(boneName);
             if (target == null) continue;
+            // Lower layer covers legs when active — skip upper anim's leg keyframes
+            if (lowerActive && ("rightLeg".equals(target) || "leftLeg".equals(target))) continue;
 
             float[] rot = interpolate(entry.getValue(), timeSec);
             float[] accumulator = switch (target) {
@@ -335,6 +461,28 @@ public class CombatAnimationController {
                 default -> null;
             };
             if (accumulator != null) {
+                accumulator[0] += rot[0];
+                accumulator[1] += rot[1];
+                accumulator[2] += rot[2];
+            }
+        }
+
+        // Lower layer: sample leg bones from lowerCurrentAnim
+        if (lowerActive) {
+            float lowerLength = ANIM_LENGTHS.getOrDefault(runtime.lowerCurrentAnim, 1.0f);
+            boolean lowerLoop = ANIM_LOOPS.getOrDefault(runtime.lowerCurrentAnim, false);
+            float lowerTimeSec = resolveCurrentTime(state, runtime.lowerCurrentAnim, lowerLength, lowerLoop, runtime.lowerAnimStartNano, runtime.lowerCurrentAnimSpeed);
+            if (!lowerLoop && lowerTimeSec > lowerLength) lowerTimeSec = lowerLength;
+            if (lowerLoop) lowerTimeSec = lowerTimeSec % lowerLength;
+
+            Map<String, List<float[]>> lowerBones = ANIM_DATA.get(runtime.lowerCurrentAnim);
+            for (Map.Entry<String, List<float[]>> entry : lowerBones.entrySet()) {
+                String boneName = entry.getKey();
+                String target = BONE_TO_VANILLA.get(boneName);
+                if (!"rightLeg".equals(target) && !"leftLeg".equals(target)) continue;
+
+                float[] rot = interpolate(entry.getValue(), lowerTimeSec);
+                float[] accumulator = "rightLeg".equals(target) ? rLegRot : lLegRot;
                 accumulator[0] += rot[0];
                 accumulator[1] += rot[1];
                 accumulator[2] += rot[2];
@@ -365,9 +513,16 @@ public class CombatAnimationController {
     private static float[] interpolate(List<float[]> keyframes, float time) {
         if (keyframes.isEmpty()) return new float[]{0, 0, 0};
         if (keyframes.size() == 1) return new float[]{keyframes.get(0)[1], keyframes.get(0)[2], keyframes.get(0)[3]};
+        if (time <= keyframes.get(0)[0]) {
+            return new float[]{keyframes.get(0)[1], keyframes.get(0)[2], keyframes.get(0)[3]};
+        }
+        float[] last = keyframes.get(keyframes.size() - 1);
+        if (time >= last[0]) {
+            return new float[]{last[1], last[2], last[3]};
+        }
 
         float[] before = keyframes.get(0);
-        float[] after = keyframes.get(keyframes.size() - 1);
+        float[] after = last;
 
         for (int i = 0; i < keyframes.size() - 1; i++) {
             if (keyframes.get(i)[0] <= time && keyframes.get(i + 1)[0] >= time) {
@@ -389,7 +544,7 @@ public class CombatAnimationController {
 
     // --- Animation name resolution ---
 
-    private static String resolveAnimationName(AbstractClientPlayer player, ICombatCapability cap) {
+    private static String resolveAnimationName(AbstractClientPlayer player, ICombatCapability cap, AnimationRuntime runtime) {
         CombatState state = cap.getState();
         WeaponType weapon = cap.getWeaponType();
 
@@ -406,7 +561,12 @@ public class CombatAnimationController {
             default: break;
         }
 
-        // Detect actual movement from the player entity
+        return resolveLocomotionAnim(player, cap, runtime);
+    }
+
+    private static String resolveLocomotionAnim(AbstractClientPlayer player, ICombatCapability cap, AnimationRuntime runtime) {
+        WeaponType weapon = cap.getWeaponType();
+
         String detected;
         if (player.isCrouching()) {
             detected = "animation.player.crouch";
@@ -419,26 +579,26 @@ public class CombatAnimationController {
             double dz = player.getZ() - player.zOld;
             double hSpeedSq = dx * dx + dz * dz;
             // Hysteresis: higher threshold to enter walk, lower to exit
-            boolean wasMoving = "animation.player.walk".equals(lastMovementAnim)
-                    || "animation.player.run".equals(lastMovementAnim);
+            boolean wasMoving = "animation.player.walk".equals(runtime.lastMovementAnim)
+                    || "animation.player.run".equals(runtime.lastMovementAnim);
             if (hSpeedSq > (wasMoving ? 0.00001 : 0.0004)) {
                 detected = "animation.player.walk";
             } else {
-                detected = "animation.player.idle";
+                detected = cap.isWeaponDrawn() ? resolveWeaponIdle(weapon) : "animation.player.idle";
             }
         }
 
         // Hold timer: require consistent state for a few ticks before switching
-        if (detected.equals(lastMovementAnim)) {
-            movementHoldTicks = 0;
+        if (detected.equals(runtime.lastMovementAnim)) {
+            runtime.movementHoldTicks = 0;
         } else {
-            movementHoldTicks++;
-            if (movementHoldTicks < 3) {
-                return lastMovementAnim; // keep previous state during hold period
+            runtime.movementHoldTicks++;
+            if (runtime.movementHoldTicks < 3) {
+                return runtime.lastMovementAnim; // keep previous state during hold period
             }
-            movementHoldTicks = 0;
+            runtime.movementHoldTicks = 0;
         }
-        lastMovementAnim = detected;
+        runtime.lastMovementAnim = detected;
         return detected;
     }
 
@@ -476,12 +636,18 @@ public class CombatAnimationController {
                 || "animation.player.run".equals(animName);
     }
 
+    private static boolean isIdleAnimation(String animName) {
+        return "animation.player.idle".equals(animName)
+                || "animation.player.sword_idle".equals(animName)
+                || "animation.player.spear_idle".equals(animName);
+    }
+
     private static boolean isJumpAnimation(String animName) {
         return "animation.player.jump".equals(animName);
     }
 
     private static boolean isGroundedMovementAnimation(String animName) {
-        return "animation.player.idle".equals(animName) || isLocomotionAnimation(animName);
+        return isIdleAnimation(animName) || isLocomotionAnimation(animName);
     }
 
     private static boolean shouldUseRecoveryBlend(String fromAnim, String toAnim) {
@@ -496,15 +662,12 @@ public class CombatAnimationController {
 
     private static boolean shouldInstantSwitch(String fromAnim, String toAnim) {
         if (fromAnim == null || toAnim == null) {
-            return true;
+            return false;
         }
         if (shouldUseRecoveryBlend(fromAnim, toAnim)) {
             return false;
         }
-        return isLocomotionAnimation(fromAnim)
-                || isLocomotionAnimation(toAnim)
-                || "animation.player.idle".equals(fromAnim)
-                || "animation.player.idle".equals(toAnim);
+        return false;
     }
 
     private static boolean shouldFreezePreviousPose(String fromAnim, String toAnim) {
@@ -514,6 +677,9 @@ public class CombatAnimationController {
     private static float resolveTransitionDuration(String fromAnim, String toAnim) {
         if (shouldFreezePreviousPose(fromAnim, toAnim)) {
             return STOP_TRANSITION_SECS;
+        }
+        if (isGroundedMovementAnimation(fromAnim) && isGroundedMovementAnimation(toAnim)) {
+            return LOCOMOTION_TRANSITION_SECS;
         }
         return TRANSITION_SECS;
     }
@@ -534,5 +700,39 @@ public class CombatAnimationController {
             return timeSec % length;
         }
         return timeSec;
+    }
+
+    private static AnimationRuntime getRuntime(AbstractClientPlayer player) {
+        return RUNTIMES.computeIfAbsent(player.getId(), id -> new AnimationRuntime());
+    }
+
+    private static AnimationRuntime getRuntime(AvatarRenderState state) {
+        if (state == null) {
+            return null;
+        }
+        return RUNTIMES.get(state.id);
+    }
+
+    private static String resolveWeaponIdle(WeaponType weapon) {
+        return switch (weapon) {
+            case SWORD -> "animation.player.sword_idle";
+            case SPEAR -> "animation.player.spear_idle";
+            default -> "animation.player.idle";
+        };
+    }
+
+    private static float sampleAnimationTime(float timeSec, float length, boolean loop) {
+        if (length <= 0.0f) {
+            return 0.0f;
+        }
+        if (loop) {
+            return timeSec % length;
+        }
+        return Math.min(timeSec, length);
+    }
+
+    private static float smoothStep01(float t) {
+        float clamped = clamp(t, 0.0f, 1.0f);
+        return clamped * clamped * (3.0f - 2.0f * clamped);
     }
 }

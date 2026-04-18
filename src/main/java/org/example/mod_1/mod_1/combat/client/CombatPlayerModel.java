@@ -46,6 +46,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
     public final ModelPart leftUpperLeg;
     public final ModelPart leftLowerLeg;
     public final ModelPart weaponMount;
+    public final ModelPart sheathBack;
 
     // Overlay (second layer) parts — full-size, no splits
     public final ModelPart hat;
@@ -77,6 +78,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.leftUpperLeg = hip.getChild("leftUpperLeg");
         this.leftLowerLeg = leftUpperLeg.getChild("leftLowerLeg");
         this.weaponMount = rightHand.getChild("weaponMount");
+        this.sheathBack = chest.getChild("sheathBack");
 
         // Full-size overlay parts (like vanilla — no splitting)
         this.hat = head.getChild("hat");
@@ -105,6 +107,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         boneMap.put("leftUpperLeg", leftUpperLeg);
         boneMap.put("leftLowerLeg", leftLowerLeg);
         boneMap.put("weaponMount", weaponMount);
+        boneMap.put("sheathBack", sheathBack);
 
         // Replace MC cube polygons with correctly UV-mapped ones from geo.json
         try {
@@ -224,7 +227,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
                 CubeListBuilder.create(), PartPose.offset(0, 6, 0));
 
         chest.addOrReplaceChild("sheathBack",
-                CubeListBuilder.create(), PartPose.offset(0, 2, 2));
+                CubeListBuilder.create(), PartPose.offset(0, -1, 2.5f));
 
         // === RIGHT LEG (split into upper + lower) ===
         PartDefinition rightUpperLeg = hip.addOrReplaceChild("rightUpperLeg",
@@ -277,7 +280,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.rightPants.visible = state.showRightPants;
         this.leftPants.visible = state.showLeftPants;
 
-        if (CombatAnimationController.isActive()) {
+        if (CombatAnimationController.isActive(state)) {
             CombatAnimationController.applyTo17Bones(this.boneMap, state);
         } else {
             applyVanillaFallback(state);
@@ -288,8 +291,8 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
 
     @Override
     public void translateToHand(AvatarRenderState state, HumanoidArm arm, PoseStack poseStack) {
-        // Only traverse to upper arm pivot — matches vanilla's expected offset
-        // so ItemInHandLayer transforms work correctly
+        // vanilla 的 ItemInHandLayer 在 translateToHand 之后还会再 translate(±1/16, 0.125, -0.625)
+        // 把物品从上臂支点挪到手部位置，所以这里只能走到 upperArm —— 走到 hand 会让物品多出 ~10 像素飘在手前。
         this.root.translateAndRotate(poseStack);
         this.hip.translateAndRotate(poseStack);
         this.waist.translateAndRotate(poseStack);

@@ -50,10 +50,14 @@ public class CombatAvatarRenderer
         state.showCape = player.isModelPartShown(PlayerModelPart.CAPE);
         state.id = player.getId();
 
-        // 未拔刀时抑制 PlayerItemInHandLayer 的手持渲染（武器改由 BackWeaponLayer 背上渲染）
         boolean weaponDrawn = CombatCapabilityEvents.getCombat(player)
-                .map(cap -> cap.isWeaponDrawn())
+                .map(cap -> {
+                    CombatAnimationController.updateAnimation(player, cap);
+                    return cap.isWeaponDrawn();
+                })
                 .orElse(false);
+
+        // 未拔刀时抑制 PlayerItemInHandLayer 的手持渲染（武器改由 BackWeaponLayer 背上渲染）
         if (!weaponDrawn) {
             // BackWeaponLayer 自己通过 capability 拿到主手物品，不依赖这里
             // 所以我们可以把主手的 itemState 清空，vanilla 的 PlayerItemInHandLayer 就会跳过

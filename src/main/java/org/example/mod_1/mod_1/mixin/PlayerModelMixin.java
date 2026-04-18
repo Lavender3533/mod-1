@@ -20,6 +20,6 @@ public abstract class PlayerModelMixin extends HumanoidModel<AvatarRenderState> 
     @Inject(method = "setupAnim(Lnet/minecraft/client/renderer/entity/state/AvatarRenderState;)V",
             at = @At("TAIL"))
     private void mod1_applyComabatAnimation(AvatarRenderState state, CallbackInfo ci) {
-        CombatAnimationController.applyToBones(this.head, this.body, this.rightArm, this.leftArm, this.rightLeg, this.leftLeg);
+        CombatAnimationController.applyToBones(this.head, this.body, this.rightArm, this.leftArm, this.rightLeg, this.leftLeg, state);
     }
 }

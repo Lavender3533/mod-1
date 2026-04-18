@@ -87,7 +87,7 @@ public class CombatInputHandler {
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.screen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
         handleKeyBindings(mc);
 
@@ -98,7 +98,7 @@ public class CombatInputHandler {
             if (cap.getState() == CombatState.INSPECT) {
                 double dx = mc.player.getX() - mc.player.xOld;
                 double dz = mc.player.getZ() - mc.player.zOld;
-                if (dx * dx + dz * dz > 0.001 || CombatAnimationController.isCurrentAnimFinished()) {
+                if (dx * dx + dz * dz > 0.001 || CombatAnimationController.isCurrentAnimFinished(mc.player)) {
                     requestWithPrediction(cap, CombatState.IDLE);
                 }
             }
@@ -124,6 +124,16 @@ public class CombatInputHandler {
                 CombatAnimationController.updateAnimation(clientPlayer, cap);
             }
         });
+
+        for (var player : mc.level.players()) {
+            if (player == mc.player) continue;
+            CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
+                CombatStateMachine.tick(cap, mc.level.getGameTime());
+                if (player instanceof AbstractClientPlayer clientPlayer) {
+                    CombatAnimationController.updateAnimation(clientPlayer, cap);
+                }
+            });
+        }
     }
 
     private static void handleKeyBindings(Minecraft mc) {

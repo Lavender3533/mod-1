@@ -71,6 +71,11 @@ public class CombatStateMachine {
     }
 
     private static void handleLightAttack(ICombatCapability cap) {
+        if (cap.getWeaponType() == WeaponType.SWORD && cap.getComboCount() == 99) {
+            cap.setLastAttackTime(0);
+            return;
+        }
+
         int combo = cap.getComboCount() + 1;
         int maxCombo = cap.getWeaponType().getMaxCombo();
 
