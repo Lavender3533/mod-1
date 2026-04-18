@@ -13,7 +13,9 @@ public enum CombatState {
     DODGE(30, false, 14),
     BLOCK(15, true, 0),
     PARRY(35, false, 8),
-    INSPECT(5, true, 0);
+    INSPECT(5, true, 0),
+    // Appended at end to preserve ordinals for any NBT-persisted state
+    ATTACK_HEAVY_CHARGING(22, true, 0);
 
     private final int priority;
     private final boolean interruptible;

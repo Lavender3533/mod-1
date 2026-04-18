@@ -15,6 +15,7 @@
   "key.mod_1.combat_toggle": "拔刀/收刀",
   "key.mod_1.dodge": "闪避",
   "key.mod_1.inspect": "检视武器",
+  "key.mod_1.heavy_attack": "重击(蓄力)",
   "subtitles.mod_1.combat.draw_weapon": "拔刀",
   "subtitles.mod_1.combat.sheath_weapon": "收刀",
   "subtitles.mod_1.combat.sword_swing": "挥剑",

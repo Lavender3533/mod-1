@@ -36,10 +36,11 @@ public class CombatAnimationController {
     private static boolean loaded = false;
     private static final Map<Integer, AnimationRuntime> RUNTIMES = new HashMap<>();
 
-    // 上半身专属动作：攻击/格挡/招架。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
+    // 上半身专属动作：攻击/格挡/招架/重击蓄力。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
     private static final Set<CombatState> UPPER_BODY_ONLY_STATES = EnumSet.of(
             CombatState.ATTACK_LIGHT,
             CombatState.ATTACK_HEAVY,
+            CombatState.ATTACK_HEAVY_CHARGING,
             CombatState.BLOCK,
             CombatState.PARRY
     );
@@ -556,6 +557,7 @@ public class CombatAnimationController {
             case BLOCK: return "animation.player.block";
             case PARRY: return "animation.player.parry";
             case ATTACK_LIGHT: return resolveLightAttack(weapon, cap.getComboCount());
+            case ATTACK_HEAVY_CHARGING:
             case ATTACK_HEAVY: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
             case INSPECT: return weapon == WeaponType.SPEAR ? "animation.player.spear_inspect" : "animation.player.sword_inspect";
             default: break;

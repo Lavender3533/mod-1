@@ -21,7 +21,8 @@ public class CombatStateMachine {
         }
 
         // Attack requires weapon drawn
-        if ((target == CombatState.ATTACK_LIGHT || target == CombatState.ATTACK_HEAVY) && !cap.isWeaponDrawn()) {
+        if ((target == CombatState.ATTACK_LIGHT || target == CombatState.ATTACK_HEAVY
+                || target == CombatState.ATTACK_HEAVY_CHARGING) && !cap.isWeaponDrawn()) {
             return false;
         }
 
@@ -58,6 +59,7 @@ public class CombatStateMachine {
                 // 收刀动画播放中, timer到期后在tick()里setWeaponDrawn(false)+回IDLE
             }
             case ATTACK_LIGHT -> handleLightAttack(cap);
+            case ATTACK_HEAVY_CHARGING -> cap.setHeavyChargeMultiplier(1.0f); // reset; final value set on release
             case DODGE -> {
                 cap.setDodgeCooldown(Config.dodgeCooldownTicks);
                 cap.setDodgeInvulnTicks(Config.dodgeInvulnTicks);
@@ -85,6 +87,17 @@ public class CombatStateMachine {
 
         cap.setComboCount(combo);
         cap.setLastAttackTime(0); // will be set to gameTime by tick caller
+    }
+
+    /**
+     * Maps held-ticks to a damage/knockback multiplier. 0 ticks → 1.0 (instant heavy);
+     * scales linearly to {@link Config#heavyChargeMaxMult} at {@link Config#heavyChargeMaxTicks}.
+     */
+    public static float computeHeavyChargeMultiplier(int heldTicks) {
+        if (heldTicks <= 0) return 1.0f;
+        int max = Math.max(1, Config.heavyChargeMaxTicks);
+        float t = Math.min(1.0f, (float) heldTicks / (float) max);
+        return 1.0f + ((float) Config.heavyChargeMaxMult - 1.0f) * t;
     }
 
     public static void tick(ICombatCapability cap, long gameTime) {

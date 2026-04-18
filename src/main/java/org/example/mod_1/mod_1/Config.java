@@ -51,11 +51,15 @@ public class Config {
     static final ForgeConfigSpec.DoubleValue BLOCK_ANGLE;
     static final ForgeConfigSpec.IntValue PARRY_SLOWNESS_DURATION;
     static final ForgeConfigSpec.IntValue PARRY_SLOWNESS_AMPLIFIER;
+    static final ForgeConfigSpec.DoubleValue PARRY_KNOCKBACK;
+    static final ForgeConfigSpec.IntValue PARRY_STUN_TICKS;
 
     static final ForgeConfigSpec.IntValue COMBO_WINDOW_TICKS;
     static final ForgeConfigSpec.IntValue DODGE_COOLDOWN_TICKS;
     static final ForgeConfigSpec.IntValue DODGE_INVULN_TICKS;
     static final ForgeConfigSpec.IntValue PARRY_WINDOW_TICKS;
+    static final ForgeConfigSpec.IntValue HEAVY_CHARGE_MAX_TICKS;
+    static final ForgeConfigSpec.DoubleValue HEAVY_CHARGE_MAX_MULT;
 
     static {
         BUILDER.comment("Combat system settings").push("combat");
@@ -111,6 +115,10 @@ public class Config {
                 .defineInRange("parrySlownessDuration", 20, 0, 6000);
         PARRY_SLOWNESS_AMPLIFIER = BUILDER.comment("Parry slowness amplifier (potion level - 1)")
                 .defineInRange("parrySlownessAmplifier", 2, 0, 10);
+        PARRY_KNOCKBACK = BUILDER.comment("Parry knockback strength applied to attacker")
+                .defineInRange("parryKnockback", 1.5, 0.0, 10.0);
+        PARRY_STUN_TICKS = BUILDER.comment("Parry stun (Mob.setNoActionTime) duration (ticks)")
+                .defineInRange("parryStunTicks", 15, 0, 200);
         BUILDER.pop();
 
         BUILDER.push("timing");
@@ -122,6 +130,10 @@ public class Config {
                 .defineInRange("dodgeInvulnTicks", 6, 0, 200);
         PARRY_WINDOW_TICKS = BUILDER.comment("Parry window at the start of BLOCK state (ticks)")
                 .defineInRange("parryWindowTicks", 4, 0, 100);
+        HEAVY_CHARGE_MAX_TICKS = BUILDER.comment("Hold-time (ticks) at which heavy attack charge reaches its maximum multiplier")
+                .defineInRange("heavyChargeMaxTicks", 20, 1, 200);
+        HEAVY_CHARGE_MAX_MULT = BUILDER.comment("Damage multiplier applied at full heavy charge (1.0 = same as instant heavy)")
+                .defineInRange("heavyChargeMaxMult", 2.0, 1.0, 10.0);
         BUILDER.pop();
 
         BUILDER.pop(); // combat
@@ -154,10 +166,14 @@ public class Config {
     public static double blockAngle;
     public static int parrySlownessDuration;
     public static int parrySlownessAmplifier;
+    public static double parryKnockback;
+    public static int parryStunTicks;
     public static int comboWindowTicks;
     public static int dodgeCooldownTicks;
     public static int dodgeInvulnTicks;
     public static int parryWindowTicks;
+    public static int heavyChargeMaxTicks;
+    public static double heavyChargeMaxMult;
 
     private static boolean validateItemName(final Object obj) {
         return obj instanceof final String itemName && ForgeRegistries.ITEMS.containsKey(Identifier.parse(itemName));
@@ -192,9 +208,13 @@ public class Config {
         blockAngle = BLOCK_ANGLE.get();
         parrySlownessDuration = PARRY_SLOWNESS_DURATION.get();
         parrySlownessAmplifier = PARRY_SLOWNESS_AMPLIFIER.get();
+        parryKnockback = PARRY_KNOCKBACK.get();
+        parryStunTicks = PARRY_STUN_TICKS.get();
         comboWindowTicks = COMBO_WINDOW_TICKS.get();
         dodgeCooldownTicks = DODGE_COOLDOWN_TICKS.get();
         dodgeInvulnTicks = DODGE_INVULN_TICKS.get();
         parryWindowTicks = PARRY_WINDOW_TICKS.get();
+        heavyChargeMaxTicks = HEAVY_CHARGE_MAX_TICKS.get();
+        heavyChargeMaxMult = HEAVY_CHARGE_MAX_MULT.get();
     }
 }

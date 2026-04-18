@@ -81,7 +81,7 @@ public class CombatDamageHandler {
     }
 
     private static float getKnockbackStrength(ICombatCapability cap, boolean heavy) {
-        if (heavy) return 1.0f;
+        if (heavy) return 1.0f * cap.getHeavyChargeMultiplier();
         int combo = cap.getComboCount();
         if (combo == 99) return 0.8f;
         return switch (combo) {
@@ -101,7 +101,7 @@ public class CombatDamageHandler {
     private static float getDamageMultiplier(ICombatCapability cap, boolean heavy) {
         float mult = 1.0f;
         if (heavy) {
-            mult = (float) Config.damageMultHeavy;
+            mult = (float) Config.damageMultHeavy * cap.getHeavyChargeMultiplier();
         } else {
             int combo = cap.getComboCount();
             if (combo == 99) {

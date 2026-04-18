@@ -29,9 +29,16 @@ public class CombatKeyBindings {
             CATEGORY
     );
 
+    public static final KeyMapping HEAVY_ATTACK = new KeyMapping(
+            "key." + Mod_1.MODID + ".heavy_attack",
+            InputConstants.KEY_F,
+            CATEGORY
+    );
+
     public static void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(COMBAT_TOGGLE);
         event.register(DODGE);
         event.register(INSPECT);
+        event.register(HEAVY_ATTACK);
     }
 }

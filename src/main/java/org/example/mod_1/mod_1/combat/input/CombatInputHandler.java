@@ -34,6 +34,8 @@ public class CombatInputHandler {
     private static CameraType cameraBeforeInspect = CameraType.FIRST_PERSON;
     private static int blockHoldTicks = 0;
     private static boolean rightMousePressed = false;
+    private static boolean heavyKeyDown = false;
+    private static int heavyChargeTicks = 0;
 
     /**
      * 拦截鼠标点击 — 拔刀后左右键改为战斗系统处理，不让 vanilla 处理。
@@ -70,9 +72,7 @@ public class CombatInputHandler {
                     blockHoldTicks = 0;
                 } else if (release && rightMousePressed) {
                     rightMousePressed = false;
-                    if (blockHoldTicks <= BLOCK_HOLD_THRESHOLD) {
-                        requestWithPrediction(cap, CombatState.ATTACK_HEAVY);
-                    } else if (cap.getState() == CombatState.BLOCK) {
+                    if (cap.getState() == CombatState.BLOCK) {
                         requestWithPrediction(cap, CombatState.IDLE);
                     }
                     blockHoldTicks = 0;
@@ -105,8 +105,9 @@ public class CombatInputHandler {
 
             updateCamera(cap);
 
-            // 右键长按计时：用于区分 ATTACK_HEAVY（短按）和 BLOCK（长按）
-            // 左键由 onMouseButton 直接处理，不经过 tick
+            handleHeavyChargeKey(cap);
+
+            // 右键按住进入 BLOCK（达到 hold threshold 后），松开退出。重击改用 F 键蓄力。
             if (cap.isWeaponDrawn()) {
                 if (rightMousePressed) {
                     blockHoldTicks++;
@@ -117,6 +118,8 @@ public class CombatInputHandler {
             } else {
                 rightMousePressed = false;
                 blockHoldTicks = 0;
+                heavyKeyDown = false;
+                heavyChargeTicks = 0;
             }
 
             // Update animation (after all state transitions)
@@ -175,13 +178,42 @@ public class CombatInputHandler {
     }
 
     private static void requestWithPrediction(ICombatCapability cap, CombatState target) {
+        requestWithPrediction(cap, target, 0);
+    }
+
+    private static void requestWithPrediction(ICombatCapability cap, CombatState target, int extra) {
+        if (target == CombatState.ATTACK_HEAVY) {
+            cap.setHeavyChargeMultiplier(CombatStateMachine.computeHeavyChargeMultiplier(extra));
+        }
         // Client prediction: apply immediately for responsiveness
         CombatStateMachine.requestTransition(cap, target);
         // Send to server for authoritative validation
         CombatNetworkChannel.CHANNEL.send(
-                new CombatStatePacket(target),
+                new CombatStatePacket(target, extra),
                 PacketDistributor.SERVER.noArg()
         );
+    }
+
+    private static void handleHeavyChargeKey(ICombatCapability cap) {
+        boolean isDown = cap.isWeaponDrawn() && CombatKeyBindings.HEAVY_ATTACK.isDown();
+
+        if (isDown && !heavyKeyDown) {
+            // Press edge → start charging
+            if (CombatStateMachine.canTransition(cap, CombatState.ATTACK_HEAVY_CHARGING)) {
+                requestWithPrediction(cap, CombatState.ATTACK_HEAVY_CHARGING);
+                heavyChargeTicks = 0;
+            }
+        } else if (!isDown && heavyKeyDown) {
+            // Release edge → fire heavy attack with charge multiplier
+            if (cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {
+                requestWithPrediction(cap, CombatState.ATTACK_HEAVY, heavyChargeTicks);
+            }
+            heavyChargeTicks = 0;
+        } else if (isDown && cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {
+            heavyChargeTicks++;
+        }
+
+        heavyKeyDown = isDown;
     }
 
     private static void updateCamera(ICombatCapability cap) {

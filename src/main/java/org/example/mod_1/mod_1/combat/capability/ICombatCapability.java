@@ -36,6 +36,9 @@ public interface ICombatCapability {
     int getDodgeInvulnTicks();
     void setDodgeInvulnTicks(int ticks);
 
+    float getHeavyChargeMultiplier();
+    void setHeavyChargeMultiplier(float mult);
+
     void tickTimers();
 
     CompoundTag serializeNBT();
