@@ -7,6 +7,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import org.example.mod_1.mod_1.combat.item.CombatSpearItem;
 import org.example.mod_1.mod_1.combat.item.CombatSwordItem;
 
 public class WeaponDetector {
@@ -21,6 +22,7 @@ public class WeaponDetector {
 
         if (held.getItem() instanceof CombatSwordItem) return WeaponType.SWORD;
         if (held.is(ItemTags.SWORDS)) return WeaponType.SWORD;
+        if (held.getItem() instanceof CombatSpearItem) return WeaponType.SPEAR;
         if (held.is(SPEARS_TAG)) return WeaponType.SPEAR;
 
         return WeaponType.UNARMED;

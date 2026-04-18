@@ -22,7 +22,6 @@ import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
-import net.minecraftforge.fml.ModLoadingContext;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
@@ -138,6 +137,9 @@ public class Mod_1 {
             if (event.getTabKey() == CreativeModeTabs.COMBAT) {
                 for (var sword : ModItems.ALL_SWORDS) {
                     event.accept(sword);
+                }
+                for (var spear : ModItems.ALL_SPEARS) {
+                    event.accept(spear);
                 }
             }
         }

@@ -49,6 +49,7 @@ public class CombatDefenseHandler {
                     event.setAmount(0);
                     cap.setState(CombatState.PARRY);
                     cap.setStateTimer(CombatState.PARRY.getDurationTicks());
+                    CombatCapabilityEvents.broadcastCombatState(player, cap);
                     CombatSoundPlayer.playParrySound(player);
 
                     Entity attacker = event.getSource().getEntity();
@@ -87,6 +88,7 @@ public class CombatDefenseHandler {
 
                 cap.setState(CombatState.PARRY);
                 cap.setStateTimer(CombatState.PARRY.getDurationTicks());
+                CombatCapabilityEvents.broadcastCombatState(player, cap);
                 CombatSoundPlayer.playParrySound(player);
 
                 if (projectile instanceof AbstractArrow arrow && player.level() instanceof ServerLevel serverLevel) {

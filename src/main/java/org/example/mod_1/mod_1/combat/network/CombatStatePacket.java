@@ -4,7 +4,6 @@ import com.mojang.logging.LogUtils;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.event.network.CustomPayloadEvent;
-import net.minecraftforge.network.PacketDistributor;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
 import org.example.mod_1.mod_1.combat.CombatSoundPlayer;
@@ -58,17 +57,7 @@ public class CombatStatePacket {
                 CombatSoundPlayer.playStateSound(player, cap.getState(), cap.getWeaponType(), cap.getComboCount());
             }
 
-            // Broadcast to all tracking players + self
-            CombatSyncPacket sync = new CombatSyncPacket(
-                    player.getId(),
-                    cap.getState(),
-                    cap.getWeaponType(),
-                    cap.isWeaponDrawn(),
-                    cap.getComboCount(),
-                    cap.getStateTimer()
-            );
-            CombatNetworkChannel.CHANNEL.send(sync,
-                    PacketDistributor.TRACKING_ENTITY_AND_SELF.with(player));
+            CombatCapabilityEvents.broadcastCombatState(player, cap);
         });
     }
 }

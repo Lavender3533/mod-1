@@ -178,7 +178,6 @@ public class CombatInputHandler {
         Minecraft mc = Minecraft.getInstance();
         CombatState state = cap.getState();
 
-        // 检视时强制第一人称，检视结束后恢复原视角
         if (state == CombatState.INSPECT && cap.isWeaponDrawn()) {
             if (!inspectCameraActive) {
                 cameraBeforeInspect = mc.options.getCameraType();
