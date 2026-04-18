@@ -16,6 +16,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.ProjectileImpactEvent;
+import net.minecraftforge.event.entity.living.LivingAttackEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.listener.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -28,6 +29,53 @@ import org.slf4j.Logger;
 public class CombatDefenseHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    /**
+     * 在 hurt 之前拦截弹射物攻击 — LivingAttackEvent 取消(返回 true)后不会触发击退/红屏/受击音/无敌帧。
+     * 仅处理弹射物;近战伤害仍走 LivingHurtEvent 走减伤。
+     */
+    @SubscribeEvent
+    public static boolean onLivingAttack(LivingAttackEvent event) {
+        if (!(event.getEntity() instanceof Player player)) return false;
+        if (player.level().isClientSide()) return false;
+
+        Entity directEntity = event.getSource().getDirectEntity();
+        if (!(directEntity instanceof Projectile projectile)) return false;
+
+        return CombatCapabilityEvents.getCombat(player).map(cap -> {
+            CombatState state = cap.getState();
+            if (state != CombatState.BLOCK && state != CombatState.PARRY) return false;
+            if (!isProjectileFromFront(player, projectile)) return false;
+
+            boolean isParry = cap.getParryWindowTicks() > 0;
+            if (isParry) {
+                cap.setState(CombatState.PARRY);
+                cap.setStateTimer(CombatState.PARRY.getDurationTicks());
+                CombatCapabilityEvents.broadcastCombatState(player, cap);
+                CombatSoundPlayer.playParrySound(player);
+
+                reflectProjectile(player, projectile);
+                projectile.discard();
+
+                if (projectile.getOwner() instanceof LivingEntity shooter) {
+                    applyParryStun(player, shooter);
+                }
+                if (player.level() instanceof ServerLevel sl) {
+                    CombatParticles.spawnParryParticles(sl, player.getEyePosition());
+                }
+                LOGGER.debug("PARRY (LivingAttack): {} reflected projectile", player.getName().getString());
+            } else {
+                projectile.discard();
+                CombatSoundPlayer.playBlockSound(player);
+                if (player.level() instanceof ServerLevel sl) {
+                    CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
+                }
+                LOGGER.debug("BLOCK (LivingAttack): {} stopped projectile {}",
+                        player.getName().getString(), projectile.getType());
+            }
+            return true;
+        }).orElse(false);
+    }
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
@@ -78,6 +126,9 @@ public class CombatDefenseHandler {
                     event.setAmount(0);
                     ((Projectile) directEntity).discard();
                     CombatSoundPlayer.playBlockSound(player);
+                    if (player.level() instanceof ServerLevel sl) {
+                        CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
+                    }
                     LOGGER.debug("BLOCK projectile (LivingHurt path): {} stopped {}",
                             player.getName().getString(), directEntity.getType());
                 } else {
@@ -85,6 +136,9 @@ public class CombatDefenseHandler {
                     float reduced = event.getAmount() * (1.0f - (float) Config.blockDamageReduction);
                     event.setAmount(reduced);
                     CombatSoundPlayer.playBlockSound(player);
+                    if (player.level() instanceof ServerLevel sl) {
+                        CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
+                    }
                     LOGGER.debug("BLOCK: reduced to {} damage", reduced);
                 }
             }
@@ -139,6 +193,9 @@ public class CombatDefenseHandler {
                 // 普通格挡：箭矢完全挡停（与原版盾牌一致）
                 if (projectile instanceof AbstractArrow arrow) arrow.discard();
                 CombatSoundPlayer.playBlockSound(player);
+                if (player.level() instanceof ServerLevel sl) {
+                    CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
+                }
                 LOGGER.debug("BLOCK projectile: {} stopped {}", player.getName().getString(), projectile.getType());
             }
         });

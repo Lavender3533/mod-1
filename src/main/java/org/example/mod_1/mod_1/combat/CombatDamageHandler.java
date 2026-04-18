@@ -70,7 +70,11 @@ public class CombatDamageHandler {
 
                 if (player.level() instanceof ServerLevel serverLevel) {
                     Vec3 hitPos = living.position().add(0, living.getBbHeight() / 2.0, 0);
-                    CombatParticles.spawnHitParticles(serverLevel, hitPos);
+                    if (heavy) {
+                        CombatParticles.spawnHeavyHitParticles(serverLevel, hitPos);
+                    } else {
+                        CombatParticles.spawnHitParticles(serverLevel, hitPos);
+                    }
                 }
 
                 LOGGER.debug("Combat hit: {} -> {} for {} damage (combo={}, heavy={})",

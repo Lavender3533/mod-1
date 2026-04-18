@@ -39,6 +39,9 @@ public interface ICombatCapability {
     float getHeavyChargeMultiplier();
     void setHeavyChargeMultiplier(float mult);
 
+    int getChargeTicks();
+    void setChargeTicks(int ticks);
+
     void tickTimers();
 
     CompoundTag serializeNBT();

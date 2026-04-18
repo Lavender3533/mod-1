@@ -82,6 +82,29 @@ public class CombatCapabilityEvents {
                     }
                 }
 
+                // 蓄力中：周期 aura + 满蓄 ready 一次性反馈
+                if (cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {
+                    int prevCharge = cap.getChargeTicks();
+                    int newCharge = prevCharge + 1;
+                    cap.setChargeTicks(newCharge);
+                    Player p = event.player();
+                    if (p.level() instanceof net.minecraft.server.level.ServerLevel sl) {
+                        if (newCharge % 4 == 0) {
+                            org.example.mod_1.mod_1.combat.CombatParticles.spawnHeavyChargeAura(sl, p.position());
+                        }
+                        int maxTicks = org.example.mod_1.mod_1.Config.heavyChargeMaxTicks;
+                        if (prevCharge < maxTicks && newCharge >= maxTicks) {
+                            org.example.mod_1.mod_1.combat.CombatParticles.spawnHeavyChargeReady(sl, p.position());
+                            sl.playSound(null, p.getX(), p.getY(), p.getZ(),
+                                    net.minecraft.sounds.SoundEvents.NOTE_BLOCK_BELL.value(),
+                                    net.minecraft.sounds.SoundSource.PLAYERS,
+                                    0.5f, 1.6f);
+                        }
+                    }
+                } else if (prevState == CombatState.ATTACK_HEAVY_CHARGING) {
+                    cap.setChargeTicks(0); // exit charging → reset
+                }
+
                 if (prevState != cap.getState()
                         || prevWeaponDrawn != cap.isWeaponDrawn()
                         || prevComboCount != cap.getComboCount()

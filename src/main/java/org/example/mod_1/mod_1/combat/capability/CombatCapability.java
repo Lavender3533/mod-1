@@ -16,6 +16,7 @@ public class CombatCapability implements ICombatCapability {
     private int parryWindowTicks = 0;
     private int dodgeInvulnTicks = 0;
     private float heavyChargeMultiplier = 1.0f;
+    private int chargeTicks = 0;
 
     @Override public CombatState getState() { return state; }
     @Override public void setState(CombatState state) { this.state = state; }
@@ -47,6 +48,9 @@ public class CombatCapability implements ICombatCapability {
 
     @Override public float getHeavyChargeMultiplier() { return heavyChargeMultiplier; }
     @Override public void setHeavyChargeMultiplier(float mult) { this.heavyChargeMultiplier = mult; }
+
+    @Override public int getChargeTicks() { return chargeTicks; }
+    @Override public void setChargeTicks(int ticks) { this.chargeTicks = ticks; }
 
     @Override
     public void tickTimers() {
