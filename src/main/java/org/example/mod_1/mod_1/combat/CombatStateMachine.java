@@ -8,6 +8,11 @@ import org.slf4j.Logger;
 public class CombatStateMachine {
 
     private static final Logger LOGGER = LogUtils.getLogger();
+    private static final int LIGHT_CHAIN_TRIGGER_TICKS = 4;
+
+    private static boolean isDashCombo(ICombatCapability cap) {
+        return cap.getWeaponType() == WeaponType.SWORD && cap.getComboCount() == 99;
+    }
 
     public static boolean canTransition(ICombatCapability cap, CombatState target) {
         CombatState current = cap.getState();
@@ -45,7 +50,15 @@ public class CombatStateMachine {
         if (!canTransition(cap, target)) return;
 
         CombatState prev = cap.getState();
+        if (target == CombatState.ATTACK_LIGHT
+                && prev == CombatState.ATTACK_LIGHT
+                && cap.getStateTimer() > LIGHT_CHAIN_TRIGGER_TICKS) {
+            cap.setQueuedLightAttack(true);
+            return;
+        }
+
         cap.setState(target);
+        cap.setQueuedLightAttack(false);
 
         if (target.isTimed()) {
             cap.setStateTimer(target.getDurationTicks());
@@ -105,6 +118,15 @@ public class CombatStateMachine {
 
         CombatState state = cap.getState();
 
+        if (state == CombatState.ATTACK_LIGHT && cap.hasQueuedLightAttack() && cap.getStateTimer() <= LIGHT_CHAIN_TRIGGER_TICKS) {
+            cap.setQueuedLightAttack(false);
+            if (isDashCombo(cap)) {
+                cap.setComboCount(0);
+            }
+            requestTransition(cap, CombatState.ATTACK_LIGHT);
+            state = cap.getState();
+        }
+
         // Update last attack time reference on light attack start
         if (state == CombatState.ATTACK_LIGHT && cap.getLastAttackTime() == 0) {
             cap.setLastAttackTime(gameTime);
@@ -112,6 +134,9 @@ public class CombatStateMachine {
 
         // Timed state expired
         if (state.isTimed() && cap.getStateTimer() <= 0) {
+            if (state == CombatState.ATTACK_LIGHT && isDashCombo(cap)) {
+                cap.resetCombo();
+            }
             if (state == CombatState.DRAW_WEAPON) {
                 cap.setWeaponDrawn(true);
             } else if (state == CombatState.SHEATH_WEAPON) {
@@ -119,6 +144,7 @@ public class CombatStateMachine {
                 cap.resetCombo();
             }
             cap.setState(CombatState.IDLE);
+            cap.setQueuedLightAttack(false);
         }
 
         // Combo timeout: reset if idle too long after last attack

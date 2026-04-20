@@ -1,6 +1,3 @@
 {
-  "parent": "minecraft:item/handheld",
-  "textures": {
-    "layer0": "mod_1:item/combat_gold_sword"
-  }
+  "parent": "minecraft:item/golden_sword"
 }

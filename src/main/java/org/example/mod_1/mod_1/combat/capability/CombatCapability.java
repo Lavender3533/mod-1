@@ -17,6 +17,7 @@ public class CombatCapability implements ICombatCapability {
     private int dodgeInvulnTicks = 0;
     private float heavyChargeMultiplier = 1.0f;
     private int chargeTicks = 0;
+    private boolean queuedLightAttack = false;
 
     @Override public CombatState getState() { return state; }
     @Override public void setState(CombatState state) { this.state = state; }
@@ -52,6 +53,9 @@ public class CombatCapability implements ICombatCapability {
     @Override public int getChargeTicks() { return chargeTicks; }
     @Override public void setChargeTicks(int ticks) { this.chargeTicks = ticks; }
 
+    @Override public boolean hasQueuedLightAttack() { return queuedLightAttack; }
+    @Override public void setQueuedLightAttack(boolean queued) { this.queuedLightAttack = queued; }
+
     @Override
     public void tickTimers() {
         if (stateTimer > 0) stateTimer--;
@@ -69,6 +73,7 @@ public class CombatCapability implements ICombatCapability {
         tag.putInt("comboCount", comboCount);
         tag.putInt("dodgeCooldown", dodgeCooldown);
         tag.putInt("stateTimer", stateTimer);
+        tag.putBoolean("queuedLightAttack", queuedLightAttack);
         return tag;
     }
 
@@ -80,5 +85,6 @@ public class CombatCapability implements ICombatCapability {
         comboCount = tag.getIntOr("comboCount", 0);
         dodgeCooldown = tag.getIntOr("dodgeCooldown", 0);
         stateTimer = tag.getIntOr("stateTimer", 0);
+        queuedLightAttack = tag.getBoolean("queuedLightAttack").orElse(false);
     }
 }

@@ -42,6 +42,9 @@ public interface ICombatCapability {
     int getChargeTicks();
     void setChargeTicks(int ticks);
 
+    boolean hasQueuedLightAttack();
+    void setQueuedLightAttack(boolean queued);
+
     void tickTimers();
 
     CompoundTag serializeNBT();

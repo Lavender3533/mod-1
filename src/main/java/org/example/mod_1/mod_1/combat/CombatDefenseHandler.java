@@ -65,12 +65,12 @@ public class CombatDefenseHandler {
                 }
                 LOGGER.debug("PARRY (LivingAttack): {} reflected projectile", player.getName().getString());
             } else {
-                projectile.discard();
+                deflectProjectile(player, projectile);
                 CombatSoundPlayer.playBlockSound(player);
                 if (player.level() instanceof ServerLevel sl) {
                     CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
                 }
-                LOGGER.debug("BLOCK (LivingAttack): {} stopped projectile {}",
+                LOGGER.debug("BLOCK (LivingAttack): {} deflected projectile {}",
                         player.getName().getString(), projectile.getType());
             }
             return true;
@@ -122,14 +122,14 @@ public class CombatDefenseHandler {
                     LOGGER.debug("PARRY! {} blocked damage from {}",
                             player.getName().getString(), event.getSource().getMsgId());
                 } else if (isProjectile) {
-                    // 普通格挡 + 弹射物：完全挡停（与原版盾牌一致），销毁箭矢
+                    // 普通格挡 + 弹射物：弹开（不吃掉）
                     event.setAmount(0);
-                    ((Projectile) directEntity).discard();
+                    deflectProjectile(player, (Projectile) directEntity);
                     CombatSoundPlayer.playBlockSound(player);
                     if (player.level() instanceof ServerLevel sl) {
                         CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
                     }
-                    LOGGER.debug("BLOCK projectile (LivingHurt path): {} stopped {}",
+                    LOGGER.debug("BLOCK projectile (LivingHurt path): {} deflected {}",
                             player.getName().getString(), directEntity.getType());
                 } else {
                     // 普通格挡 + 近战：减伤
@@ -190,13 +190,13 @@ public class CombatDefenseHandler {
 
                 LOGGER.debug("PARRY REFLECT: {} reflected projectile", player.getName().getString());
             } else {
-                // 普通格挡：箭矢完全挡停（与原版盾牌一致）
-                if (projectile instanceof AbstractArrow arrow) arrow.discard();
+                // 普通格挡：箭矢弹开（与原版盾牌一致，不吃掉）
+                deflectProjectile(player, projectile);
                 CombatSoundPlayer.playBlockSound(player);
                 if (player.level() instanceof ServerLevel sl) {
                     CombatParticles.spawnBlockSparkParticles(sl, player.getEyePosition());
                 }
-                LOGGER.debug("BLOCK projectile: {} stopped {}", player.getName().getString(), projectile.getType());
+                LOGGER.debug("BLOCK projectile: {} deflected {}", player.getName().getString(), projectile.getType());
             }
         });
     }
@@ -215,6 +215,50 @@ public class CombatDefenseHandler {
             reflectedArrow.pickup = AbstractArrow.Pickup.CREATIVE_ONLY;
             serverLevel.addFreshEntity(reflectedArrow);
         }
+    }
+
+    /**
+     * 普通格挡：箭矢弹开（不吃掉，模仿 vanilla 盾牌行为）。
+     *
+     * 实现注意：原箭命中后会立即进入 inGround 卡入状态，即使 setDeltaMovement 也会被
+     * 自己的 tick 逻辑覆盖。所以这里 discard 原箭并 spawn 一支新箭，给新箭弹开速度。
+     */
+    private static void deflectProjectile(Player player, Projectile projectile) {
+        if (!(player.level() instanceof ServerLevel serverLevel)) return;
+        if (!(projectile instanceof AbstractArrow arrow)) {
+            projectile.discard();
+            return;
+        }
+
+        Vec3 vel = arrow.getDeltaMovement();
+        Vec3 bounce;
+        if (vel.lengthSqr() < 1.0e-3) {
+            // 已减速到接近 0：向玩家朝向反方向 + 向上轻推
+            Vec3 lookDir = player.getLookAngle();
+            bounce = new Vec3(-lookDir.x * 0.35, 0.25, -lookDir.z * 0.35);
+        } else {
+            // 反向 + 衰减 60%，加向上偏置避免立刻坠地
+            bounce = vel.scale(-0.4).add(0, 0.15, 0);
+        }
+        var rng = serverLevel.random;
+        bounce = bounce.add(
+                (rng.nextFloat() - 0.5f) * 0.15,
+                (rng.nextFloat() - 0.5f) * 0.15,
+                (rng.nextFloat() - 0.5f) * 0.15
+        );
+
+        // 用新箭代替原箭
+        Entity spawned = arrow.getType().create(serverLevel, EntitySpawnReason.TRIGGERED);
+        if (spawned instanceof AbstractArrow newArrow) {
+            // 出生在玩家胸口稍前位置
+            Vec3 spawnPos = player.getEyePosition().add(player.getLookAngle().scale(0.5));
+            newArrow.setPos(spawnPos.x, spawnPos.y - 0.3, spawnPos.z);
+            newArrow.setDeltaMovement(bounce);
+            newArrow.setOwner(null);
+            newArrow.pickup = AbstractArrow.Pickup.ALLOWED;
+            serverLevel.addFreshEntity(newArrow);
+        }
+        arrow.discard();
     }
 
     private static void applyParryStun(Player player, LivingEntity attacker) {

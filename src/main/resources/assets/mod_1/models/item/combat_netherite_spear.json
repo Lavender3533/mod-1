@@ -1,6 +1,3 @@
 {
-  "parent": "minecraft:item/handheld",
-  "textures": {
-    "layer0": "mod_1:item/combat_netherite_spear"
-  }
+  "parent": "minecraft:item/netherite_spear"
 }

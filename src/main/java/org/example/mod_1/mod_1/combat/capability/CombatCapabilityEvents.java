@@ -17,6 +17,7 @@ import net.minecraftforge.network.PacketDistributor;
 import org.example.mod_1.mod_1.Mod_1;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
+import org.example.mod_1.mod_1.combat.CombatSoundPlayer;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.example.mod_1.mod_1.combat.network.CombatSyncPacket;
 import org.slf4j.Logger;
@@ -78,16 +79,26 @@ public class CombatCapabilityEvents {
                         if (p.level() instanceof net.minecraft.server.level.ServerLevel sl) {
                             org.example.mod_1.mod_1.combat.CombatParticles.spawnDodgeParticles(sl, p.position());
                         }
-                        applyDodgeImpulse(p);
+                        // 施力已在 packet handler 收到 DODGE 包时立即触发，这里只做粒子
                     }
                 }
 
-                // 蓄力中：周期 aura + 满蓄 ready 一次性反馈
+                // 蓄力中：周期 aura + 满蓄 ready 一次性反馈 + 移动减速(蹲下豁免)
                 if (cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {
                     int prevCharge = cap.getChargeTicks();
                     int newCharge = prevCharge + 1;
                     cap.setChargeTicks(newCharge);
                     Player p = event.player();
+
+                    // 移动减速:站立时 SLOWNESS II;蹲下不减速。短时长每 tick 续约,松开蓄力即自然失效
+                    if (!p.isCrouching()) {
+                        p.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                net.minecraft.world.effect.MobEffects.SLOWNESS,
+                                5,      // 5 tick 续约,蓄力停了/蹲下了几 tick 内自动消
+                                1,      // SLOWNESS II
+                                true, false, false));
+                    }
+
                     if (p.level() instanceof net.minecraft.server.level.ServerLevel sl) {
                         if (newCharge % 4 == 0) {
                             org.example.mod_1.mod_1.combat.CombatParticles.spawnHeavyChargeAura(sl, p.position());
@@ -103,6 +114,11 @@ public class CombatCapabilityEvents {
                     }
                 } else if (prevState == CombatState.ATTACK_HEAVY_CHARGING) {
                     cap.setChargeTicks(0); // exit charging → reset
+                }
+
+                if (cap.getState() == CombatState.ATTACK_LIGHT
+                        && (prevState != CombatState.ATTACK_LIGHT || prevComboCount != cap.getComboCount())) {
+                    CombatSoundPlayer.playStateSound(event.player(), cap.getState(), cap.getWeaponType(), cap.getComboCount());
                 }
 
                 if (prevState != cap.getState()
@@ -149,7 +165,12 @@ public class CombatCapabilityEvents {
     }
 
     public static void applyDodgeImpulse(Player player) {
-        Vec3 moveInput = new Vec3(player.xxa, 0, player.zza);
+        // 客户端调用入口：从本地 player 输入读取方向
+        applyDodgeImpulse(player, player.xxa, player.zza);
+    }
+
+    public static void applyDodgeImpulse(Player player, float moveX, float moveZ) {
+        Vec3 moveInput = new Vec3(moveX, 0, moveZ);
         Vec3 direction;
         if (moveInput.lengthSqr() > 0.001) {
             float yawRad = (float) Math.toRadians(player.getYRot());
@@ -161,7 +182,7 @@ public class CombatCapabilityEvents {
                     moveInput.x * sin + moveInput.z * cos
             ).normalize();
         } else {
-            // No movement input → dodge backward (away from look direction)
+            // 无方向输入 → 后撤
             float yawRad = (float) Math.toRadians(player.getYRot());
             direction = new Vec3(-Math.sin(yawRad), 0, Math.cos(yawRad));
         }

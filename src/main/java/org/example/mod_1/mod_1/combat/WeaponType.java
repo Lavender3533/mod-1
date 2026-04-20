@@ -3,7 +3,7 @@ package org.example.mod_1.mod_1.combat;
 public enum WeaponType {
     UNARMED("unarmed", 2),
     SWORD("sword", 3),
-    SPEAR("spear", 2);
+    SPEAR("spear", 3);
 
     private final String animPrefix;
     private final int maxCombo;

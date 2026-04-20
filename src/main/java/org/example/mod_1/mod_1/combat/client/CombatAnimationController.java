@@ -28,6 +28,8 @@ public class CombatAnimationController {
     private static final float TRANSITION_SECS = 0.18f;
     private static final float LOCOMOTION_TRANSITION_SECS = 0.10f;
     private static final float STOP_TRANSITION_SECS = 0.14f;
+    private static final float ATTACK_CHAIN_TRANSITION_SECS = 0.06f;
+    private static final float ACTION_ENTRY_TRANSITION_SECS = 0.08f;
 
     // animName -> boneName -> keyframes [time, rx, ry, rz]
     private static final Map<String, Map<String, List<float[]>>> ANIM_DATA = new HashMap<>();
@@ -46,7 +48,6 @@ public class CombatAnimationController {
     );
 
     private static final Set<String> LOWER_BODY_BONES = Set.of(
-            "hip",
             "rightUpperLeg", "rightLowerLeg",
             "leftUpperLeg", "leftLowerLeg"
     );
@@ -91,10 +92,14 @@ public class CombatAnimationController {
             "animations/sword/anim_sword_light_2.animation.json",
             "animations/sword/anim_sword_light_3.animation.json",
             "animations/sword/anim_sword_heavy.animation.json",
+            "animations/sword/anim_sword_heavy_charge.animation.json",
             "animations/sword/anim_sword_dash_attack.animation.json",
             "animations/spear/anim_spear_idle.animation.json",
             "animations/spear/anim_spear_light.animation.json",
+            "animations/spear/anim_spear_light_2.animation.json",
+            "animations/spear/anim_spear_light_3.animation.json",
             "animations/spear/anim_spear_heavy.animation.json",
+            "animations/spear/anim_spear_heavy_charge.animation.json",
             "animations/sword/anim_sword_inspect.animation.json",
             "animations/spear/anim_spear_inspect.animation.json",
     };
@@ -119,6 +124,8 @@ public class CombatAnimationController {
         private float prevAnimFrozenTime = -1.0f;
         private boolean freezePrevOnNextApply = false;
         private boolean currentAnimFinished = false;
+        private CombatState lastState = CombatState.IDLE;
+        private int lastStateTimer = -1;
 
         // Lower layer (only active during upper-body-only combat states)
         private String lowerCurrentAnim = null;
@@ -133,6 +140,21 @@ public class CombatAnimationController {
         private boolean lowerFreezePrevOnNextApply = false;
     }
 
+
+    /**
+     * 热重载入口:清缓存+运行时 → 从磁盘重读所有动画 json。
+     * @return 本次加载成功的动画数量
+     */
+    public static int reloadAnimations() {
+        ANIM_DATA.clear();
+        ANIM_LENGTHS.clear();
+        ANIM_LOOPS.clear();
+        RUNTIMES.clear();
+        loaded = false;
+        loadAnimations();
+        LOGGER.info("Animations reloaded: {}", ANIM_DATA.size());
+        return ANIM_DATA.size();
+    }
 
     private static void loadAnimations() {
         if (loaded) return;
@@ -209,28 +231,36 @@ public class CombatAnimationController {
             runtime.active = false;
             runtime.currentAnimSpeed = 1.0f;
             runtime.currentAnimFinished = false;
+            runtime.lastState = cap.getState();
+            runtime.lastStateTimer = cap.getStateTimer();
             clearLowerLayer(runtime);
             return;
         }
-        float animSpeed = resolveAnimationSpeed(player, animName);
-        if (!animName.equals(runtime.currentAnim)) {
-            boolean instantSwitch = shouldInstantSwitch(runtime.currentAnim, animName);
+        long now = System.nanoTime();
+        float animSpeed = resolveAnimationSpeed(player, cap, animName);
+        boolean restartCurrentAnim = shouldRestartCurrentAnimation(runtime, cap, animName);
+        if (restartCurrentAnim || !animName.equals(runtime.currentAnim)) {
+            boolean instantSwitch = restartCurrentAnim || shouldInstantSwitch(runtime.currentAnim, animName);
             boolean freezePrevPose = shouldFreezePreviousPose(runtime.currentAnim, animName);
             runtime.prevAnim = instantSwitch ? null : runtime.currentAnim;
             runtime.prevAnimStartNano = runtime.animStartNano;
             runtime.prevAnimSpeed = runtime.currentAnimSpeed;
-            runtime.transitionStartNano = System.nanoTime();
-            runtime.currentTransitionSecs = resolveTransitionDuration(runtime.currentAnim, animName);
+            runtime.transitionStartNano = now;
+            runtime.currentTransitionSecs = restartCurrentAnim
+                    ? 0.0f
+                    : resolveTransitionDuration(runtime.currentAnim, animName);
             runtime.prevAnimFrozenTime = -1.0f;
-            runtime.freezePrevOnNextApply = !instantSwitch && freezePrevPose;
+            runtime.freezePrevOnNextApply = !restartCurrentAnim && !instantSwitch && freezePrevPose;
             runtime.currentAnim = animName;
             runtime.currentAnimSpeed = animSpeed;
-            runtime.animStartNano = System.nanoTime();
+            runtime.animStartNano = resolveAnimationStartNano(now, cap);
             runtime.currentAnimFinished = false;
         } else {
             runtime.currentAnimSpeed = animSpeed;
         }
         runtime.active = true;
+        runtime.lastState = cap.getState();
+        runtime.lastStateTimer = cap.getStateTimer();
 
         updateLowerLayer(player, cap, runtime);
     }
@@ -247,7 +277,7 @@ public class CombatAnimationController {
             clearLowerLayer(runtime);
             return;
         }
-        float lowerSpeed = resolveAnimationSpeed(player, lowerAnim);
+        float lowerSpeed = resolveAnimationSpeed(player, cap, lowerAnim);
 
         if (!lowerAnim.equals(runtime.lowerCurrentAnim)) {
             boolean firstActivation = runtime.lowerCurrentAnim == null;
@@ -412,6 +442,14 @@ public class CombatAnimationController {
             part.xRot = rot[0] * DEG_TO_RAD;
             part.yRot = rot[1] * DEG_TO_RAD;
             part.zRot = rot[2] * DEG_TO_RAD;
+
+            // Live tweaker: BLOCK 和 蓄力 动画激活时叠加偏移，便于在游戏内调姿势
+            String anim = runtime.currentAnim;
+            if ("animation.player.block".equals(anim)
+                    || "animation.player.sword_heavy_charge".equals(anim)
+                    || "animation.player.spear_heavy_charge".equals(anim)) {
+                BlockPoseTweaker.applyDelta(part, boneName);
+            }
         }
     }
 
@@ -557,7 +595,7 @@ public class CombatAnimationController {
             case BLOCK: return "animation.player.block";
             case PARRY: return "animation.player.parry";
             case ATTACK_LIGHT: return resolveLightAttack(weapon, cap.getComboCount());
-            case ATTACK_HEAVY_CHARGING:
+            case ATTACK_HEAVY_CHARGING: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy_charge" : "animation.player.sword_heavy_charge";
             case ATTACK_HEAVY: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy" : "animation.player.sword_heavy";
             case INSPECT: return weapon == WeaponType.SPEAR ? "animation.player.spear_inspect" : "animation.player.sword_inspect";
             default: break;
@@ -614,12 +652,22 @@ public class CombatAnimationController {
                 default -> "animation.player.sword_light_1";
             };
         } else if (weapon == WeaponType.SPEAR) {
-            return "animation.player.spear_light";
+            return switch (combo) {
+                case 1 -> "animation.player.spear_light";
+                case 2 -> "animation.player.spear_light_2";
+                case 3 -> "animation.player.spear_light_3";
+                default -> "animation.player.spear_light";
+            };
         }
         return null;
     }
 
-    private static float resolveAnimationSpeed(AbstractClientPlayer player, String animName) {
+    private static float resolveAnimationSpeed(AbstractClientPlayer player, ICombatCapability cap, String animName) {
+        float timedSpeed = resolveTimedAnimationSpeed(cap, animName);
+        if (timedSpeed > 0.0f) {
+            return timedSpeed;
+        }
+
         double dx = player.getX() - player.xOld;
         double dz = player.getZ() - player.zOld;
         double horizontalSpeed = Math.sqrt(dx * dx + dz * dz);
@@ -631,6 +679,44 @@ public class CombatAnimationController {
             return clamp((float) (horizontalSpeed / 0.17), 0.90f, 1.18f);
         }
         return 1.0f;
+    }
+
+    private static float resolveTimedAnimationSpeed(ICombatCapability cap, String animName) {
+        CombatState state = cap.getState();
+        if (!state.isTimed() || ANIM_LOOPS.getOrDefault(animName, false)) {
+            return -1.0f;
+        }
+
+        int durationTicks = state.getDurationTicks();
+        float animLength = ANIM_LENGTHS.getOrDefault(animName, 0.0f);
+        if (durationTicks <= 0 || animLength <= 0.0f) {
+            return -1.0f;
+        }
+        return animLength * 20.0f / durationTicks;
+    }
+
+    private static long resolveAnimationStartNano(long now, ICombatCapability cap) {
+        CombatState state = cap.getState();
+        if (!state.isTimed()) {
+            return now;
+        }
+
+        int durationTicks = state.getDurationTicks();
+        int remainingTicks = Math.max(0, Math.min(durationTicks, cap.getStateTimer()));
+        double elapsedSeconds = (durationTicks - remainingTicks) / 20.0;
+        return now - (long) (elapsedSeconds * 1_000_000_000L);
+    }
+
+    private static boolean shouldRestartCurrentAnimation(AnimationRuntime runtime, ICombatCapability cap, String animName) {
+        if (runtime.currentAnim == null || !animName.equals(runtime.currentAnim)) {
+            return false;
+        }
+
+        CombatState state = cap.getState();
+        return state.isTimed()
+                && runtime.lastState == state
+                && runtime.lastStateTimer >= 0
+                && cap.getStateTimer() > runtime.lastStateTimer;
     }
 
     private static boolean isLocomotionAnimation(String animName) {
@@ -646,6 +732,25 @@ public class CombatAnimationController {
 
     private static boolean isJumpAnimation(String animName) {
         return "animation.player.jump".equals(animName);
+    }
+
+    private static boolean isAttackAnimation(String animName) {
+        return "animation.player.sword_light_1".equals(animName)
+                || "animation.player.sword_light_2".equals(animName)
+                || "animation.player.sword_light_3".equals(animName)
+                || "animation.player.sword_dash_attack".equals(animName)
+                || "animation.player.sword_heavy".equals(animName)
+                || "animation.player.spear_light".equals(animName)
+                || "animation.player.spear_heavy".equals(animName);
+    }
+
+    private static boolean isCombatActionAnimation(String animName) {
+        return isAttackAnimation(animName)
+                || "animation.player.draw_weapon".equals(animName)
+                || "animation.player.sheath_weapon".equals(animName)
+                || "animation.player.dodge".equals(animName)
+                || "animation.player.block".equals(animName)
+                || "animation.player.parry".equals(animName);
     }
 
     private static boolean isGroundedMovementAnimation(String animName) {
@@ -679,6 +784,13 @@ public class CombatAnimationController {
     private static float resolveTransitionDuration(String fromAnim, String toAnim) {
         if (shouldFreezePreviousPose(fromAnim, toAnim)) {
             return STOP_TRANSITION_SECS;
+        }
+        if (isAttackAnimation(fromAnim) && isAttackAnimation(toAnim)) {
+            return ATTACK_CHAIN_TRANSITION_SECS;
+        }
+        if ((isGroundedMovementAnimation(fromAnim) && isCombatActionAnimation(toAnim))
+                || (isCombatActionAnimation(fromAnim) && isGroundedMovementAnimation(toAnim))) {
+            return ACTION_ENTRY_TRANSITION_SECS;
         }
         if (isGroundedMovementAnimation(fromAnim) && isGroundedMovementAnimation(toAnim)) {
             return LOCOMOTION_TRANSITION_SECS;

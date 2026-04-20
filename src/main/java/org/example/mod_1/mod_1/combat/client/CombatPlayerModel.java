@@ -1,6 +1,8 @@
 package org.example.mod_1.mod_1.combat.client;
 
 import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.ArmedModel;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HeadedModel;
@@ -13,6 +15,11 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import org.example.mod_1.mod_1.combat.CombatState;
+import org.example.mod_1.mod_1.combat.WeaponType;
+import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -286,13 +293,20 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
             applyVanillaFallback(state);
         }
 
+        // Crouch sink — animation rotates legs into squat, but pivots are fixed.
+        // MC model coords: +Y is downward, so increasing hip.y lowers the body visually.
+        if (state.isCrouching) {
+            this.hip.y += 1.0F;
+        }
+
         applyLookDirection(state);
     }
 
     @Override
     public void translateToHand(AvatarRenderState state, HumanoidArm arm, PoseStack poseStack) {
-        // vanilla 的 ItemInHandLayer 在 translateToHand 之后还会再 translate(±1/16, 0.125, -0.625)
-        // 把物品从上臂支点挪到手部位置，所以这里只能走到 upperArm —— 走到 hand 会让物品多出 ~10 像素飘在手前。
+        // Walk to upper arm only — vanilla ItemInHandLayer adds its own offset after this
+        // to reach the hand position, assuming a straight arm. This works correctly for all
+        // animations where the lower arm rotation is moderate.
         this.root.translateAndRotate(poseStack);
         this.hip.translateAndRotate(poseStack);
         this.waist.translateAndRotate(poseStack);
@@ -348,5 +362,14 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.neck.yRot += yawRad * 0.35F;
         this.head.xRot += pitchRad * 0.75F;
         this.head.yRot += yawRad * 0.65F;
+    }
+
+    private static Player resolvePlayer(AvatarRenderState state) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) {
+            return null;
+        }
+        Entity entity = mc.level.getEntity(state.id);
+        return entity instanceof Player player ? player : null;
     }
 }

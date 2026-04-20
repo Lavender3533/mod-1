@@ -59,6 +59,19 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         model.chest.translateAndRotate(poseStack);
         model.sheathBack.translateAndRotate(poseStack);
 
+        // Live tweaker — 在 baseline 变换之前叠加，X/Y/Z 对齐身体坐标
+        //   X: 沿身体横向（左右），轴翻转可让武器从背左切到背右
+        //   Y: 沿身体竖向（上下），就是你要的"剑尖往上往下转"
+        //   Z: 沿身体前后向（深度），让武器从贴背→突出
+        poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getBackRot(0)));
+        poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getBackRot(1)));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(BlockPoseTweaker.getBackRot(2)));
+        poseStack.translate(
+                BlockPoseTweaker.getBackPos(0),
+                BlockPoseTweaker.getBackPos(1),
+                BlockPoseTweaker.getBackPos(2)
+        );
+
         applyBackWeaponTransform(poseStack, weaponType);
 
         scratchState.submit(poseStack, collector, packedLight, 0, 0);
@@ -67,6 +80,10 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
     }
 
     private static void applyBackWeaponTransform(PoseStack poseStack, WeaponType weaponType) {
+        // Baked from back_rot/back_pos tweaker — 剑和矛通用
+        poseStack.mulPose(Axis.ZP.rotationDegrees(35.0f));
+        poseStack.translate(0.0f, 0.35f, 0.0f);
+
         // sheathBack 现在挂在 chest 局部 (0, -1, 2.5) — 上背中线(肩胛骨之间)、背面外侧 0.5px。
         // 此处只做：让物品面朝身体外侧 + 斜挎角度 + 微调位置。
         switch (weaponType) {

@@ -18,6 +18,7 @@ import org.example.mod_1.mod_1.combat.WeaponType;
 import org.example.mod_1.mod_1.combat.capability.CombatCapabilityEvents;
 import org.example.mod_1.mod_1.combat.capability.ICombatCapability;
 import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
+import org.example.mod_1.mod_1.combat.client.BlockPoseTweaker;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.example.mod_1.mod_1.combat.network.CombatStatePacket;
 import net.minecraftforge.network.PacketDistributor;
@@ -29,6 +30,7 @@ public class CombatInputHandler {
 
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int BLOCK_HOLD_THRESHOLD = 3;
+    private static final int SHEATH_CAMERA_GRACE_TICKS = 12; // 收刀完成后保持第三人称的宽限期(~0.6s)
     private static boolean forcedThirdPerson = false;
     private static boolean inspectCameraActive = false;
     private static CameraType cameraBeforeInspect = CameraType.FIRST_PERSON;
@@ -36,6 +38,8 @@ public class CombatInputHandler {
     private static boolean rightMousePressed = false;
     private static boolean heavyKeyDown = false;
     private static int heavyChargeTicks = 0;
+    private static boolean lastWeaponDrawn = false;
+    private static int sheathCameraGrace = 0;
 
     /**
      * 拦截鼠标点击 — 拔刀后左右键改为战斗系统处理，不让 vanilla 处理。
@@ -56,7 +60,7 @@ public class CombatInputHandler {
             if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 if (press) {
                     // 左键按下：触发轻攻击（冲刺时变冲刺攻击）
-                    if (mc.player.isSprinting() && cap.getWeaponType() == WeaponType.SWORD) {
+                    if (shouldUseDashAttack(mc, cap)) {
                         cap.setComboCount(99);
                         requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
                     } else {
@@ -163,9 +167,16 @@ public class CombatInputHandler {
         while (CombatKeyBindings.DODGE.consumeClick()) {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
                 if (cap.isWeaponDrawn() && CombatStateMachine.canTransition(cap, CombatState.DODGE)) {
-                    requestWithPrediction(cap, CombatState.DODGE);
-                    // Apply dodge impulse immediately on client for responsiveness
-                    CombatCapabilityEvents.applyDodgeImpulse(mc.player);
+                    // 客户端预测：立即施力 + 状态切换
+                    CombatStateMachine.requestTransition(cap, CombatState.DODGE);
+                    float moveX = mc.player.xxa;
+                    float moveZ = mc.player.zza;
+                    CombatCapabilityEvents.applyDodgeImpulse(mc.player, moveX, moveZ);
+                    // 把方向带给服务端，确保服务端施力方向一致
+                    CombatNetworkChannel.CHANNEL.send(
+                            new CombatStatePacket(CombatState.DODGE, 0, moveX, moveZ),
+                            PacketDistributor.SERVER.noArg()
+                    );
                 }
             });
         }
@@ -175,6 +186,21 @@ public class CombatInputHandler {
                 if (cap.isWeaponDrawn()) requestWithPrediction(cap, CombatState.INSPECT);
             });
         }
+
+        while (CombatKeyBindings.RELOAD_ANIMATIONS.consumeClick()) {
+            int count = CombatAnimationController.reloadAnimations();
+            mc.gui.getChat().addMessage(
+                    net.minecraft.network.chat.Component.literal("§a[Combat Arts] 动画已重载: " + count + " 个")
+            );
+        }
+
+        // BLOCK 姿势调试工具
+        while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
+        while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
+        while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
+        while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
+        while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
+        while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
     }
 
     private static void requestWithPrediction(ICombatCapability cap, CombatState target) {
@@ -194,6 +220,27 @@ public class CombatInputHandler {
         );
     }
 
+    private static boolean shouldUseDashAttack(Minecraft mc, ICombatCapability cap) {
+        if (mc.player == null || cap.getWeaponType() != WeaponType.SWORD || !mc.player.isSprinting()) {
+            return false;
+        }
+
+        CombatState state = cap.getState();
+        if (state == CombatState.ATTACK_LIGHT || cap.hasQueuedLightAttack()) {
+            return false;
+        }
+
+        if (cap.getComboCount() > 0 || state != CombatState.IDLE) return false;
+
+        // 最近 2s 内攻击过 → 算"连击中",不再触发 dash,让玩家走 combo 1/2/3
+        long lastAttack = cap.getLastAttackTime();
+        if (lastAttack > 0) {
+            long gameTime = mc.player.level().getGameTime();
+            if (gameTime - lastAttack < 40) return false;
+        }
+        return true;
+    }
+
     private static void handleHeavyChargeKey(ICombatCapability cap) {
         boolean isDown = cap.isWeaponDrawn() && CombatKeyBindings.HEAVY_ATTACK.isDown();
 
@@ -202,6 +249,7 @@ public class CombatInputHandler {
             if (CombatStateMachine.canTransition(cap, CombatState.ATTACK_HEAVY_CHARGING)) {
                 requestWithPrediction(cap, CombatState.ATTACK_HEAVY_CHARGING);
                 heavyChargeTicks = 0;
+                cap.setChargeTicks(0); // 客户端镜像，让 HUD 进度条能读到
             }
         } else if (!isDown && heavyKeyDown) {
             // Release edge → fire heavy attack with charge multiplier
@@ -209,8 +257,10 @@ public class CombatInputHandler {
                 requestWithPrediction(cap, CombatState.ATTACK_HEAVY, heavyChargeTicks);
             }
             heavyChargeTicks = 0;
+            cap.setChargeTicks(0);
         } else if (isDown && cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {
             heavyChargeTicks++;
+            cap.setChargeTicks(heavyChargeTicks); // 客户端镜像
         }
 
         heavyKeyDown = isDown;
@@ -225,10 +275,11 @@ public class CombatInputHandler {
                 cameraBeforeInspect = mc.options.getCameraType();
                 inspectCameraActive = true;
             }
-            if (mc.options.getCameraType() != CameraType.FIRST_PERSON) {
-                mc.options.setCameraType(CameraType.FIRST_PERSON);
+            // 检视用第三人称（看完整角色 + 17 骨骼检视动画）
+            if (mc.options.getCameraType() != CameraType.THIRD_PERSON_BACK) {
+                mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
             }
-            forcedThirdPerson = false;
+            forcedThirdPerson = true;
             return;
         }
 
@@ -241,9 +292,18 @@ public class CombatInputHandler {
         }
 
         // 进入第三人称的条件：已拔刀 或 正在拔刀 或 正在收刀（让玩家看到收刀全程）
-        boolean shouldBeThirdPerson = cap.isWeaponDrawn()
+        // 收刀刚完成时再额外保持几 tick，让玩家看到收刀末尾 + idle 过渡完，不要立即跳回第一人称
+        boolean drawn = cap.isWeaponDrawn();
+        if (lastWeaponDrawn && !drawn) {
+            sheathCameraGrace = SHEATH_CAMERA_GRACE_TICKS;
+        }
+        lastWeaponDrawn = drawn;
+        if (sheathCameraGrace > 0) sheathCameraGrace--;
+
+        boolean shouldBeThirdPerson = drawn
                 || state == CombatState.DRAW_WEAPON
-                || state == CombatState.SHEATH_WEAPON;
+                || state == CombatState.SHEATH_WEAPON
+                || sheathCameraGrace > 0;
 
         if (shouldBeThirdPerson && !forcedThirdPerson) {
             mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
