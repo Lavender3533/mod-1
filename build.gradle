@@ -135,13 +135,6 @@ repositories {
     maven { url = 'https://maven.aliyun.com/repository/public' }
     // Mojang libraries (authlib etc.)
     maven { url = 'https://libraries.minecraft.net' }
-    // GeckoLib
-    maven {
-        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
-        content {
-            includeGroupByRegex("software\\.bernie.*")
-        }
-    }
 
     // If you have mod jar dependencies in ./libs, you can declare them as a repository like so.
     // See https://docs.gradle.org/current/userguide/declaring_repositories.html#sub:flat_dir_resolver
@@ -157,9 +150,6 @@ dependencies {
     // If the group id is "net.minecraft" and the artifact id is one of ["client", "server", "joined"],
     // then special handling is done to allow a setup of a vanilla dependency without the use of an external repository.
     minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
-
-    // GeckoLib for player animations
-    implementation fg.deobf("software.bernie.geckolib:geckolib-forge-${minecraft_version}:5.4.5")
 
     // Example mod dependency with JEI - using fg.deobf() ensures the dependency is remapped to your development mappings
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -209,7 +199,12 @@ tasks.named('jar', Jar).configure {
                     "Implementation-Title"    : project.name,
                     "Implementation-Version"  : project.jar.archiveVersion,
                     "Implementation-Vendor"   : mod_authors,
-                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")])
+                    "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                    // Forge MixinPlatformAgentMinecraftForge 必须看到 Built-On-Minecraft 才认为这是 Forge mod，
+                    // 否则它 reject 我们的 jar，MixinConfigs 永远不会被读取 → mixin 完全不生效
+                    "Built-On-Minecraft"      : minecraft_version,
+                    // Forge MixinPlatformAgent 通过 manifest 的 MixinConfigs 识别 mixin 配置
+                    "MixinConfigs"            : "${mod_id}.mixins.json"])
     }
 }
 

@@ -64,6 +64,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
     public final ModelPart leftLowerSleeve;
     public final ModelPart rightPants;
     public final ModelPart leftPants;
+    public final ModelPart cape;
 
     public CombatPlayerModel(ModelPart bakedRoot, boolean slim) {
         super(bakedRoot, RenderTypes::entityCutoutNoCull);
@@ -96,6 +97,7 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.leftLowerSleeve = leftLowerArm.getChild("left_sleeve_lower");
         this.rightPants = rightUpperLeg.getChild("right_pants");
         this.leftPants = leftUpperLeg.getChild("left_pants");
+        this.cape = chest.getChild("cape");
 
         boneMap.put("root", root);
         boneMap.put("hip", hip);
@@ -162,6 +164,12 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
                 CubeListBuilder.create().texOffs(16, 32)
                         .addBox(-4, -2, -2, 8, 12, 4, new CubeDeformation(0.25F)),
                 PartPose.ZERO);
+
+        // Cape — 10x16 hanging behind chest, uses separate cape texture
+        chest.addOrReplaceChild("cape",
+                CubeListBuilder.create().texOffs(0, 0)
+                        .addBox(-5, -2, 1, 10, 16, 1, new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(0, 0, 2, 0, (float) Math.PI, 0));
 
         // === HEAD ===
         PartDefinition neck = chest.addOrReplaceChild("neck",

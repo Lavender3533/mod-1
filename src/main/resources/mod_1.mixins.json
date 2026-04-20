@@ -3,7 +3,6 @@
   "minVersion": "0.8",
   "package": "org.example.mod_1.mod_1.mixin",
   "compatibilityLevel": "JAVA_21",
-  "refmap": "mod_1.refmap.json",
   "mixins": [
   ],
   "client": [

@@ -3,10 +3,10 @@ package org.example.mod_1.mod_1.combat.client;
 import com.mojang.logging.LogUtils;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.core.Direction;
-import org.example.mod_1.mod_1.mixin.ModelPartAccessor;
 import org.joml.Vector3fc;
 import org.slf4j.Logger;
 
+import java.lang.reflect.Field;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -134,9 +134,29 @@ public class GeoQuadRenderer {
     /**
      * Replace polygon UVs on a single ModelPart's first cube.
      * Creates new Polygon objects with the existing vertex positions but correct UV.
+     *
+     * 用反射拿 ModelPart.cubes，避免依赖 ModelPartAccessor mixin（生产环境 mixin 配置不一定能加载上）。
      */
+    private static Field CUBES_FIELD;
+    static {
+        try {
+            CUBES_FIELD = ModelPart.class.getDeclaredField("cubes");
+            CUBES_FIELD.setAccessible(true);
+        } catch (NoSuchFieldException e) {
+            LOGGER.error("Cannot find ModelPart.cubes field via reflection", e);
+        }
+    }
+
     private static void fix(ModelPart part, Map<Direction, float[]> faceUVs) {
-        List<ModelPart.Cube> cubes = ((ModelPartAccessor)(Object)part).getCubes();
+        List<ModelPart.Cube> cubes;
+        try {
+            @SuppressWarnings("unchecked")
+            List<ModelPart.Cube> tmp = (List<ModelPart.Cube>) CUBES_FIELD.get(part);
+            cubes = tmp;
+        } catch (Exception e) {
+            LOGGER.error("Failed to read ModelPart.cubes via reflection", e);
+            return;
+        }
         if (cubes.isEmpty()) return;
 
         ModelPart.Cube cube = cubes.get(0);
