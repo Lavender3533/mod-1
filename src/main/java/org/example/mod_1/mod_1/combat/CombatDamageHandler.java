@@ -188,11 +188,25 @@ public class CombatDamageHandler {
         return player.level().getEntities(player, searchBox, entity -> {
             if (entity == player) return false;
             if (!(entity instanceof LivingEntity)) return false;
-            Vec3 toEntity = entity.position().add(0, entity.getBbHeight() / 2, 0).subtract(eyePos);
-            double dist = toEntity.length();
-            if (dist > range || dist < 0.1) return false;
-            Vec3 toEntityNorm = toEntity.normalize();
-            double dot = lookVec.x * toEntityNorm.x + lookVec.y * toEntityNorm.y + lookVec.z * toEntityNorm.z;
+
+            // 用包围盒最近点判定 — 比"实体中心"更准, 尤其对马/牛这类宽实体:
+            // 它们 position() 是脚下中心, 中心到玩家眼睛的方向可能完全偏离实体本身,
+            // 导致明明贴在你脸上的马也被算成"不在视锥内"。
+            AABB box = entity.getBoundingBox();
+            Vec3 closest = new Vec3(
+                    net.minecraft.util.Mth.clamp(eyePos.x, box.minX, box.maxX),
+                    net.minecraft.util.Mth.clamp(eyePos.y, box.minY, box.maxY),
+                    net.minecraft.util.Mth.clamp(eyePos.z, box.minZ, box.maxZ)
+            );
+            Vec3 toClosest = closest.subtract(eyePos);
+            double dist = toClosest.length();
+            if (dist > range) return false;
+
+            // 贴身距离 (< 0.6 格) 跳过角度检测 — 实体已经撞到玩家身上了, 不该因为"中心点偏一点"就漏判
+            if (dist < 0.6) return true;
+
+            Vec3 toClosestNorm = toClosest.normalize();
+            double dot = lookVec.x * toClosestNorm.x + lookVec.y * toClosestNorm.y + lookVec.z * toClosestNorm.z;
             return dot >= cosThreshold;
         });
     }
