@@ -2,12 +2,18 @@ package org.example.mod_1.mod_1.combat;
 
 // 服务端攻击判定 + 伤害计算
 import com.mojang.logging.LogUtils;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.TickEvent;
@@ -53,22 +59,50 @@ public class CombatDamageHandler {
         float baseDamage = getBaseDamage(player);
         float multiplier = getDamageMultiplier(cap, heavy);
 
-        float totalDamage = baseDamage * multiplier;
-        float knockbackStrength = getKnockbackStrength(cap, heavy);
+        float ourDamage = baseDamage * multiplier;
+        float ourKnockback = getKnockbackStrength(cap, heavy);
+
+        ItemStack weaponStack = player.getMainHandItem();
+        ServerLevel serverLevel = player.level() instanceof ServerLevel sl ? sl : null;
 
         List<Entity> targets = getEntitiesInArc(player, range, angle);
         DamageSource source = player.damageSources().playerAttack(player);
 
+        // 附魔: Fire Aspect tick 数 (点燃目标用), 提前算一次, 所有目标共用
+        int fireAspectLevel = serverLevel != null
+                ? EnchantmentHelper.getItemEnchantmentLevel(holder(serverLevel, Enchantments.FIRE_ASPECT), weaponStack)
+                : 0;
+
+        boolean anyHit = false;
         for (Entity target : targets) {
             if (target instanceof LivingEntity living) {
-                living.hurt(source, totalDamage);
+                // 附魔伤害加成 (Sharpness/Smite/Bane of Arthropods 等), 由 vanilla EnchantmentHelper 处理
+                float finalDamage = serverLevel != null
+                        ? EnchantmentHelper.modifyDamage(serverLevel, weaponStack, living, source, ourDamage)
+                        : ourDamage;
+
+                if (serverLevel != null) {
+                    living.hurtServer(serverLevel, source, finalDamage);
+                } else {
+                    living.hurt(source, finalDamage);
+                }
+
                 CombatSoundPlayer.playHitSound(player);
 
+                // Knockback: 我们的固定击退 + Knockback 附魔加成 (vanilla 公式)
+                float finalKnockback = serverLevel != null
+                        ? EnchantmentHelper.modifyKnockback(serverLevel, weaponStack, living, source, ourKnockback)
+                        : ourKnockback;
                 double dx = player.getX() - living.getX();
                 double dz = player.getZ() - living.getZ();
-                living.knockback(knockbackStrength, dx, dz);
+                living.knockback(finalKnockback, dx, dz);
 
-                if (player.level() instanceof ServerLevel serverLevel) {
+                // Fire Aspect: 每级 4 秒
+                if (fireAspectLevel > 0) {
+                    living.igniteForSeconds(fireAspectLevel * 4);
+                }
+
+                if (serverLevel != null) {
                     Vec3 hitPos = living.position().add(0, living.getBbHeight() / 2.0, 0);
                     if (heavy) {
                         CombatParticles.spawnHeavyHitParticles(serverLevel, hitPos);
@@ -77,11 +111,18 @@ public class CombatDamageHandler {
                     }
                 }
 
-                LOGGER.debug("Combat hit: {} -> {} for {} damage (combo={}, heavy={})",
-                        player.getName().getString(), living.getName().getString(),
-                        totalDamage, cap.getComboCount(), heavy);
+                anyHit = true;
             }
         }
+
+        // 耐久消耗
+        if (anyHit && !weaponStack.isEmpty() && !player.isCreative() && serverLevel != null) {
+            weaponStack.hurtAndBreak(1, player, net.minecraft.world.entity.EquipmentSlot.MAINHAND);
+        }
+    }
+
+    private static Holder<Enchantment> holder(ServerLevel level, net.minecraft.resources.ResourceKey<Enchantment> key) {
+        return level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT).getOrThrow(key);
     }
 
     private static float getKnockbackStrength(ICombatCapability cap, boolean heavy) {

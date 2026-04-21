@@ -52,6 +52,18 @@ public class CombatAnimationController {
             "leftUpperLeg", "leftLowerLeg"
     );
 
+    // 攻击时左手交给 locomotion 层 (走路/跑步会自然摆动) — 攻击动画里左手关键帧只有 5-9° 几乎看不出,
+    // 让左手跟着 walk/run 的 ±16°/±28° 摆动, 攻击手感更"重"。
+    // BLOCK / PARRY / 蓄力等需要双臂保持姿势的状态不走这条路。
+    private static boolean useLowerLayerForBone(String boneName, CombatState state) {
+        if (LOWER_BODY_BONES.contains(boneName)) return true;
+        if ((state == CombatState.ATTACK_LIGHT || state == CombatState.ATTACK_HEAVY)
+                && ("leftUpperArm".equals(boneName) || "leftLowerArm".equals(boneName) || "leftHand".equals(boneName))) {
+            return true;
+        }
+        return false;
+    }
+
     // 17→6 bone merge mapping: child bones whose rotations get ADDED to a target vanilla bone
     private static final Map<String, String> BONE_TO_VANILLA = Map.ofEntries(
             Map.entry("head", "head"),
@@ -414,7 +426,7 @@ public class CombatAnimationController {
             String boneName = boneEntry.getKey();
             ModelPart part = boneEntry.getValue();
 
-            boolean useLower = lowerActive && LOWER_BODY_BONES.contains(boneName);
+            boolean useLower = lowerActive && useLowerLayerForBone(boneName, runtime.lastState);
             Map<String, List<float[]>> srcBones = useLower ? lowerBones : bones;
             Map<String, List<float[]>> srcPrevBones = useLower ? lowerPrevBones : prevBones;
             float srcTime = useLower ? lowerTimeSec : timeSec;
@@ -486,8 +498,8 @@ public class CombatAnimationController {
             String boneName = entry.getKey();
             String target = BONE_TO_VANILLA.get(boneName);
             if (target == null) continue;
-            // Lower layer covers legs when active — skip upper anim's leg keyframes
-            if (lowerActive && ("rightLeg".equals(target) || "leftLeg".equals(target))) continue;
+            // Lower layer covers some bones (legs always; left arm during attacks)
+            if (lowerActive && useLowerLayerForBone(boneName, runtime.lastState)) continue;
 
             float[] rot = interpolate(entry.getValue(), timeSec);
             float[] accumulator = switch (target) {
@@ -518,10 +530,17 @@ public class CombatAnimationController {
             for (Map.Entry<String, List<float[]>> entry : lowerBones.entrySet()) {
                 String boneName = entry.getKey();
                 String target = BONE_TO_VANILLA.get(boneName);
-                if (!"rightLeg".equals(target) && !"leftLeg".equals(target)) continue;
+                if (target == null) continue;
+                if (!useLowerLayerForBone(boneName, runtime.lastState)) continue;
 
                 float[] rot = interpolate(entry.getValue(), lowerTimeSec);
-                float[] accumulator = "rightLeg".equals(target) ? rLegRot : lLegRot;
+                float[] accumulator = switch (target) {
+                    case "rightLeg" -> rLegRot;
+                    case "leftLeg" -> lLegRot;
+                    case "leftArm" -> lArmRot;
+                    default -> null;
+                };
+                if (accumulator == null) continue;
                 accumulator[0] += rot[0];
                 accumulator[1] += rot[1];
                 accumulator[2] += rot[2];

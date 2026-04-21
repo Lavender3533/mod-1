@@ -54,15 +54,18 @@ public class CombatSyncPacket {
         Entity entity = mc.level.getEntity(msg.entityId);
         if (!(entity instanceof Player player)) return;
 
-        // Don't override local player's client prediction — only sync other players
-        if (player == mc.player) return;
-
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
-            cap.setState(CombatState.fromOrdinal(msg.stateOrdinal));
+            // 本地玩家:state/stateTimer/combo 都由客户端预测 own (避免服务端 tick 比客户端慢半 tick
+            // 时, 同步把 client 已经 queue→fire 后的 combo=2 snap 回 combo=1, 造成 3 段动画 1→2→1 闪烁)。
+            // 但 weaponType / drawn 必须同步: 这俩是从手持物推导, 客户端无 swap 检测, 不同步会停在按 R 时的值。
+            boolean isLocal = player == Minecraft.getInstance().player;
+            if (!isLocal) {
+                cap.setState(CombatState.fromOrdinal(msg.stateOrdinal));
+                cap.setStateTimer(msg.stateTimer);
+                cap.setComboCount(msg.comboCount);
+            }
             cap.setWeaponType(WeaponType.fromOrdinal(msg.weaponTypeOrdinal));
             cap.setWeaponDrawn(msg.weaponDrawn);
-            cap.setComboCount(msg.comboCount);
-            cap.setStateTimer(msg.stateTimer);
         });
     }
 }

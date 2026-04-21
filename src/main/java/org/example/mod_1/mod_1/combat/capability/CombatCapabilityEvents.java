@@ -18,6 +18,8 @@ import org.example.mod_1.mod_1.Mod_1;
 import org.example.mod_1.mod_1.combat.CombatState;
 import org.example.mod_1.mod_1.combat.CombatStateMachine;
 import org.example.mod_1.mod_1.combat.CombatSoundPlayer;
+import org.example.mod_1.mod_1.combat.WeaponDetector;
+import org.example.mod_1.mod_1.combat.WeaponType;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
 import org.example.mod_1.mod_1.combat.network.CombatSyncPacket;
 import org.slf4j.Logger;
@@ -69,6 +71,19 @@ public class CombatCapabilityEvents {
                 boolean prevWeaponDrawn = cap.isWeaponDrawn();
                 int prevComboCount = cap.getComboCount();
                 int prevStateTimer = cap.getStateTimer();
+                WeaponType prevWeaponType = cap.getWeaponType();
+
+                // 拔刀状态下检测当前手持武器, 同步 weaponType.
+                // 仅做"换武器类型"的同步, 不做"换到非武器就自动收刀" — 否则用户滚轮经过
+                // 箭/红石/肉 等非武器槽位会被静默收刀, 滚回武器后还以为在战斗状态。
+                // 不重置 combo: 攻击中 swap 时 combo 突然归 0 会让动画选择掉到 fallback (light_1),
+                // 造成 3 段连击动画跳变。combo 由 comboWindowTicks 自然超时管理。
+                if (cap.isWeaponDrawn() && isSafeForWeaponSwap(prevState)) {
+                    WeaponType actual = WeaponDetector.detect(event.player());
+                    if (actual != prevWeaponType) {
+                        cap.setWeaponType(actual);
+                    }
+                }
 
                 CombatStateMachine.tick(cap, event.player().level().getGameTime());
 
@@ -124,6 +139,7 @@ public class CombatCapabilityEvents {
                 if (prevState != cap.getState()
                         || prevWeaponDrawn != cap.isWeaponDrawn()
                         || prevComboCount != cap.getComboCount()
+                        || prevWeaponType != cap.getWeaponType()
                         || (prevStateTimer > 0 && cap.getStateTimer() == 0)) {
                     broadcastCombatState(event.player(), cap);
                 }
@@ -138,6 +154,15 @@ public class CombatCapabilityEvents {
         if (!(target instanceof Player trackedPlayer)) return;
 
         getCombat(trackedPlayer).ifPresent(cap -> syncCombatStateToPlayer(trackedPlayer, cap, tracker));
+    }
+
+    // 拔刀中切换武器要选"安全时机" — 攻击/闪避/格挡反击/重击的命中帧期间切换会引发
+    // 伤害结算混乱(如重击中途切矛, range/angle 立刻变), 所以只在静态状态下接受切换。
+    private static boolean isSafeForWeaponSwap(CombatState state) {
+        return switch (state) {
+            case IDLE, DRAW_WEAPON, SHEATH_WEAPON, INSPECT, BLOCK -> true;
+            default -> false;
+        };
     }
 
     public static void broadcastCombatState(Player player, ICombatCapability cap) {

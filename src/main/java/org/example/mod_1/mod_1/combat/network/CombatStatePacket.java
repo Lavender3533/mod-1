@@ -62,6 +62,32 @@ public class CombatStatePacket {
         CombatState requested = CombatState.fromOrdinal(msg.stateOrdinal);
 
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
+            // 任何动作包到达时,先按当前主手物刷新 weaponType, 避免:
+            //  切换热栏 → 同 tick 内点击 → 攻击包先到, tick 检测还没跑 → 用旧 weaponType.
+            // 持非武器点击攻击/格挡 → 静默拒绝 (不收刀, 不影响后续滚回武器后的攻击)。
+            // SHEATH_WEAPON 例外: 收刀过程允许已经是非武器, 让动画播放完。
+            // 注意: 只在"安全"状态下切 weaponType, 否则 ATTACK_LIGHT 中途切会让动画跳变 + combo 错位。
+            if (requested != CombatState.SHEATH_WEAPON) {
+                WeaponType actual = WeaponDetector.detect(player);
+
+                // 安全状态 (IDLE/DRAW/SHEATH/INSPECT/BLOCK) 才同步 weaponType, 不重置 combo
+                // (combo 由 comboWindowTicks 自然超时管, 不需要在 swap 时强制清, 否则 3 段动画会被打断)
+                CombatState curState = cap.getState();
+                boolean safeToSwap = curState == CombatState.IDLE
+                        || curState == CombatState.DRAW_WEAPON
+                        || curState == CombatState.SHEATH_WEAPON
+                        || curState == CombatState.INSPECT
+                        || curState == CombatState.BLOCK;
+                if (safeToSwap && actual != cap.getWeaponType()) {
+                    cap.setWeaponType(actual);
+                }
+
+                // 非武器时只允许 IDLE / SHEATH_WEAPON; 攻击/格挡/拔刀/检视等通通拒绝, 但保留 drawn 状态。
+                if (actual == WeaponType.UNARMED && requested != CombatState.IDLE) {
+                    return;
+                }
+            }
+
             // Refresh weapon type from actual held item on server side
             if (requested == CombatState.DRAW_WEAPON) {
                 WeaponType detected = WeaponDetector.detect(player);

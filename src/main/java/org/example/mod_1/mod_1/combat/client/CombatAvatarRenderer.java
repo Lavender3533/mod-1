@@ -1,5 +1,7 @@
 package org.example.mod_1.mod_1.combat.client;
 
+import net.minecraft.client.entity.ClientAvatarEntity;
+import net.minecraft.client.entity.ClientAvatarState;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
@@ -7,6 +9,7 @@ import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.layers.PlayerItemInHandLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.entity.player.PlayerModelType;
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -26,6 +29,7 @@ public class CombatAvatarRenderer
         this.addLayer(new PlayerItemInHandLayer<>(this));
         this.addLayer(new GuardWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new BackWeaponLayer(this, this.itemModelResolver));
+        this.addLayer(new CombatCapeLayer(this, context));
     }
 
     @Override
@@ -51,6 +55,8 @@ public class CombatAvatarRenderer
         state.showRightSleeve = player.isModelPartShown(PlayerModelPart.RIGHT_SLEEVE);
         state.showCape = player.isModelPartShown(PlayerModelPart.CAPE);
         state.id = player.getId();
+
+        extractCapeState(player, state, partialTick);
 
         boolean weaponDrawn = false;
         boolean useCustomGuardWeaponLayer = false;
@@ -85,6 +91,31 @@ public class CombatAvatarRenderer
     private static void clearHandItem(AvatarRenderState state) {
         if (state.rightHandItemState != null) state.rightHandItemState.clear();
         if (state.leftHandItemState != null) state.leftHandItemState.clear();
+    }
+
+    // 复刻 vanilla AvatarRenderer.extractCapeState — vanilla 是 private,
+    // 我们 extends LivingEntityRenderer 拿不到, 所以照抄计算逻辑给 capeFlap/Lean/Lean2 赋值。
+    private static void extractCapeState(AbstractClientPlayer player, AvatarRenderState state, float partialTick) {
+        ClientAvatarState s = ((ClientAvatarEntity) player).avatarState();
+        double dx = s.getInterpolatedCloakX(partialTick)
+                - Mth.lerp((double) partialTick, player.xo, player.getX());
+        double dy = s.getInterpolatedCloakY(partialTick)
+                - Mth.lerp((double) partialTick, player.yo, player.getY());
+        double dz = s.getInterpolatedCloakZ(partialTick)
+                - Mth.lerp((double) partialTick, player.zo, player.getZ());
+        float yBody = Mth.rotLerp(partialTick, player.yBodyRotO, player.yBodyRot);
+        double sinY = Mth.sin((double) (yBody * 0.017453292F));
+        double negCosY = -Mth.cos((double) (yBody * 0.017453292F));
+
+        state.capeFlap = Mth.clamp((float) dy * 10.0F, -6.0F, 32.0F);
+        state.capeLean = (float) (dx * sinY + dz * negCosY) * 100.0F;
+        state.capeLean *= 1.0F - state.fallFlyingScale();
+        state.capeLean = Mth.clamp(state.capeLean, 0.0F, 150.0F);
+        state.capeLean2 = Mth.clamp((float) (dx * negCosY - dz * sinY) * 100.0F, -20.0F, 20.0F);
+
+        float bob = s.getInterpolatedBob(partialTick);
+        float walkDist = s.getInterpolatedWalkDistance(partialTick);
+        state.capeFlap += Mth.sin(walkDist * 6.0F) * 32.0F * bob;
     }
 
     @Override

@@ -11,6 +11,7 @@
   "item.mod_1.combat_gold_spear": "Combat Golden Spear",
   "item.mod_1.combat_diamond_spear": "Combat Diamond Spear",
   "item.mod_1.combat_netherite_spear": "Combat Netherite Spear",
+  "itemGroup.mod_1.combat_arts": "Combat Arts",
   "key.categories.mod_1.combat": "Combat",
   "key.mod_1.combat_toggle": "Draw/Sheath Weapon",
   "key.mod_1.dodge": "Dodge",
@@ -33,5 +34,24 @@
   "subtitles.mod_1.combat.hit": "Attack hits",
   "subtitles.mod_1.combat.dodge": "Dodge roll",
   "subtitles.mod_1.combat.block": "Attack blocked",
-  "subtitles.mod_1.combat.parry": "Perfect parry"
+  "subtitles.mod_1.combat.parry": "Perfect parry",
+
+  "hud.mod_1.weapon.sword": "Sword",
+  "hud.mod_1.weapon.spear": "Spear",
+  "hud.mod_1.weapon.unarmed": "Unarmed",
+  "hud.mod_1.state.idle": "Ready",
+  "hud.mod_1.state.draw": "Drawing",
+  "hud.mod_1.state.sheath": "Sheathing",
+  "hud.mod_1.state.attack_light": "Attack",
+  "hud.mod_1.state.attack_heavy": "Heavy",
+  "hud.mod_1.state.heavy_charging": "Charging",
+  "hud.mod_1.state.dodge": "Dodge",
+  "hud.mod_1.state.block": "Block",
+  "hud.mod_1.state.parry": "Parry!",
+  "hud.mod_1.state.inspect": "Inspect",
+  "hud.mod_1.combo.finisher": "FINISHER!",
+  "hud.mod_1.combo.sprint": "SPRINT",
+  "hud.mod_1.label.dodge": "Dodge",
+  "hud.mod_1.label.charge": "Charge",
+  "hud.mod_1.label.charge_full": "FULL!"
 }

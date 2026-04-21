@@ -11,6 +11,7 @@
   "item.mod_1.combat_gold_spear": "战斗金矛",
   "item.mod_1.combat_diamond_spear": "战斗钻石矛",
   "item.mod_1.combat_netherite_spear": "战斗下界合金矛",
+  "itemGroup.mod_1.combat_arts": "战斗艺术",
   "key.categories.mod_1.combat": "战斗",
   "key.mod_1.combat_toggle": "拔刀/收刀",
   "key.mod_1.dodge": "闪避",
@@ -33,5 +34,24 @@
   "subtitles.mod_1.combat.hit": "命中",
   "subtitles.mod_1.combat.dodge": "闪避翻滚",
   "subtitles.mod_1.combat.block": "格挡",
-  "subtitles.mod_1.combat.parry": "完美格挡"
+  "subtitles.mod_1.combat.parry": "完美格挡",
+
+  "hud.mod_1.weapon.sword": "剑",
+  "hud.mod_1.weapon.spear": "矛",
+  "hud.mod_1.weapon.unarmed": "徒手",
+  "hud.mod_1.state.idle": "待战",
+  "hud.mod_1.state.draw": "拔刀中",
+  "hud.mod_1.state.sheath": "收刀中",
+  "hud.mod_1.state.attack_light": "攻击",
+  "hud.mod_1.state.attack_heavy": "重击",
+  "hud.mod_1.state.heavy_charging": "蓄力中",
+  "hud.mod_1.state.dodge": "闪避",
+  "hud.mod_1.state.block": "格挡",
+  "hud.mod_1.state.parry": "完美格挡!",
+  "hud.mod_1.state.inspect": "检视",
+  "hud.mod_1.combo.finisher": "终结!",
+  "hud.mod_1.combo.sprint": "冲刺",
+  "hud.mod_1.label.dodge": "闪避",
+  "hud.mod_1.label.charge": "蓄力",
+  "hud.mod_1.label.charge_full": "满蓄!"
 }

@@ -31,6 +31,10 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
             new ModelLayerLocation(Identifier.fromNamespaceAndPath("mod_1", "combat_player"), "main");
     public static final ModelLayerLocation LAYER_LOCATION_SLIM =
             new ModelLayerLocation(Identifier.fromNamespaceAndPath("mod_1", "combat_player_slim"), "main");
+    // Cape 单独 bake — 不挂在 body 树里, 主渲染 pass 自然不会画 cape (避免用 body 贴图渲 cape geometry).
+    // 由 CombatCapeLayer 自己 bake + 用 cape 贴图 submit。
+    public static final ModelLayerLocation LAYER_LOCATION_CAPE =
+            new ModelLayerLocation(Identifier.fromNamespaceAndPath("mod_1", "combat_cape"), "main");
 
     public final boolean slim;
 
@@ -64,7 +68,6 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
     public final ModelPart leftLowerSleeve;
     public final ModelPart rightPants;
     public final ModelPart leftPants;
-    public final ModelPart cape;
 
     public CombatPlayerModel(ModelPart bakedRoot, boolean slim) {
         super(bakedRoot, RenderTypes::entityCutoutNoCull);
@@ -97,7 +100,6 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.leftLowerSleeve = leftLowerArm.getChild("left_sleeve_lower");
         this.rightPants = rightUpperLeg.getChild("right_pants");
         this.leftPants = leftUpperLeg.getChild("left_pants");
-        this.cape = chest.getChild("cape");
 
         boneMap.put("root", root);
         boneMap.put("hip", hip);
@@ -164,12 +166,6 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
                 CubeListBuilder.create().texOffs(16, 32)
                         .addBox(-4, -2, -2, 8, 12, 4, new CubeDeformation(0.25F)),
                 PartPose.ZERO);
-
-        // Cape — 10x16 hanging behind chest, uses separate cape texture
-        chest.addOrReplaceChild("cape",
-                CubeListBuilder.create().texOffs(0, 0)
-                        .addBox(-5, -2, 1, 10, 16, 1, new CubeDeformation(0.0F)),
-                PartPose.offsetAndRotation(0, 0, 2, 0, (float) Math.PI, 0));
 
         // === HEAD ===
         PartDefinition neck = chest.addOrReplaceChild("neck",
@@ -308,6 +304,28 @@ public class CombatPlayerModel extends EntityModel<AvatarRenderState>
         }
 
         applyLookDirection(state);
+    }
+
+    // Cape 单独 bake — root → cape, vanilla 几何 + texScaleU=1.0/V=0.5 与 PlayerCapeModel.createCapeLayer() 一致.
+    // PartPose Y=-2: 我们 chest 经过 hip(-12) → waist(-6) → chest(-4) 链, 比 vanilla body(挂 meshRoot=0) 低 2 单位,
+    // 这里减 2 把 cape pivot 拉回 vanilla 高度。
+    // texSize 必须 64×64 (vanilla 写法), texScale(1, 0.5) 会再把 V 缩 0.5 → 等效 64×32, 不能在这里再写 32。
+    public static LayerDefinition createCapeLayer() {
+        MeshDefinition mesh = new MeshDefinition();
+        PartDefinition meshRoot = mesh.getRoot();
+        PartDefinition root = meshRoot.addOrReplaceChild("root",
+                CubeListBuilder.create(), PartPose.offset(0, 24, 0));
+        PartDefinition hip = root.addOrReplaceChild("hip",
+                CubeListBuilder.create(), PartPose.offset(0, -12, 0));
+        PartDefinition waist = hip.addOrReplaceChild("waist",
+                CubeListBuilder.create(), PartPose.offset(0, -6, 0));
+        PartDefinition chest = waist.addOrReplaceChild("chest",
+                CubeListBuilder.create(), PartPose.offset(0, -4, 0));
+        chest.addOrReplaceChild("cape",
+                CubeListBuilder.create().texOffs(0, 0)
+                        .addBox(-5, 0, -1, 10, 16, 1, CubeDeformation.NONE, 1.0F, 0.5F),
+                PartPose.offsetAndRotation(0, -2, 2, 0, (float) Math.PI, 0));
+        return LayerDefinition.create(mesh, 64, 64);
     }
 
     @Override

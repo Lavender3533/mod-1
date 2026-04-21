@@ -5,7 +5,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -68,13 +67,18 @@ public class Mod_1 {
     // Creates a new BlockItem with the id "mod_1:example_block", combining the namespace and path
     public static final RegistryObject<Item> EXAMPLE_BLOCK_ITEM = ITEMS.register("example_block", () -> new BlockItem(EXAMPLE_BLOCK.get(), new Item.Properties().setId(itemKey("example_block"))));
 
-    // Creates a new food item with the id "mod_1:example_id", nutrition 1 and saturation 2
-    public static final RegistryObject<Item> EXAMPLE_ITEM = ITEMS.register("example_item", () -> new Item(new Item.Properties().setId(itemKey("example_item")).food(new FoodProperties.Builder().alwaysEdible().nutrition(1).saturationModifier(2f).build())));
-
-    // Creates a creative tab with the id "mod_1:example_tab" for the example item, that is placed after the combat tab
-    public static final RegistryObject<CreativeModeTab> EXAMPLE_TAB = CREATIVE_MODE_TABS.register("example_tab", () -> CreativeModeTab.builder().withTabsBefore(CreativeModeTabs.COMBAT).icon(() -> EXAMPLE_ITEM.get().getDefaultInstance()).displayItems((parameters, output) -> {
-        output.accept(EXAMPLE_ITEM.get()); // Add the example item to the tab. For your own tabs, this method is preferred over the event
-    }).build());
+    // Combat Arts 专属创意栏 — 图标用我们自己的钻石剑, 列出全部 sword + spear.
+    public static final RegistryObject<CreativeModeTab> COMBAT_ARTS_TAB = CREATIVE_MODE_TABS.register(
+            "combat_arts",
+            () -> CreativeModeTab.builder()
+                    .title(net.minecraft.network.chat.Component.translatable("itemGroup.mod_1.combat_arts"))
+                    .withTabsBefore(CreativeModeTabs.COMBAT)
+                    .icon(() -> ModItems.COMBAT_DIAMOND_SWORD.get().getDefaultInstance())
+                    .displayItems((parameters, output) -> {
+                        for (var sword : ModItems.ALL_SWORDS) output.accept(sword.get());
+                        for (var spear : ModItems.ALL_SPEARS) output.accept(spear.get());
+                    })
+                    .build());
 
     public Mod_1(FMLJavaModLoadingContext context) {
         BusGroup modBusGroup = context.getModBusGroup();
@@ -101,10 +105,11 @@ public class Mod_1 {
         // Register key mappings via the mod bus group's specific event bus
         RegisterKeyMappingsEvent.getBus(modBusGroup).addListener(CombatKeyBindings::registerKeys);
 
-        // Register 17-bone model layer definitions (wide + slim)
+        // Register 17-bone model layer definitions (wide + slim) + 单独的 cape layer
         EntityRenderersEvent.RegisterLayerDefinitions.getBus(modBusGroup).addListener(event -> {
             event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION, CombatPlayerModel::createBodyLayer);
             event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION_SLIM, CombatPlayerModel::createSlimBodyLayer);
+            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION_CAPE, CombatPlayerModel::createCapeLayer);
         });
 
         // Initialize combat renderer when layers are added
@@ -134,14 +139,8 @@ public class Mod_1 {
         @SubscribeEvent
         public static void addCreative(BuildCreativeModeTabContentsEvent event) {
             if (event.getTabKey() == CreativeModeTabs.BUILDING_BLOCKS) event.accept(EXAMPLE_BLOCK_ITEM);
-            if (event.getTabKey() == CreativeModeTabs.COMBAT) {
-                for (var sword : ModItems.ALL_SWORDS) {
-                    event.accept(sword);
-                }
-                for (var spear : ModItems.ALL_SPEARS) {
-                    event.accept(spear);
-                }
-            }
+            // 战斗武器只放在我们自己的 COMBAT_ARTS_TAB (在 tab 注册时通过 displayItems 添加),
+            // 不再塞 vanilla COMBAT tab 避免重复显示。
         }
     }
 
