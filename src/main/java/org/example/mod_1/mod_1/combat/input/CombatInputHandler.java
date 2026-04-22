@@ -197,13 +197,16 @@ public class CombatInputHandler {
             );
         }
 
-        // BLOCK 姿势调试工具
-        while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
-        while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
-        while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
-        while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
-        while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
-        while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
+        // BLOCK 姿势调试工具 — 暂时禁用 (KeyMapping 即使不 event.register, [/]/,/./'/' 这些键
+        // 仍会被 vanilla keyboard handler 路由到 consumeClick(), 必须注掉处理器才能彻底关掉)。
+        // 字段定义和处理逻辑保留, 想再调姿势时只要把这 6 行 + CombatKeyBindings.registerKeys 里的
+        // 6 行 event.register 一起取消注释即可。
+        // while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
+        // while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
+        // while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
+        // while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
+        // while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
+        // while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
     }
 
     private static void requestWithPrediction(ICombatCapability cap, CombatState target) {
