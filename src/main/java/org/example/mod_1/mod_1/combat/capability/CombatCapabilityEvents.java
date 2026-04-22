@@ -58,6 +58,14 @@ public class CombatCapabilityEvents {
         getCombat(original).ifPresent(oldCap -> {
             getCombat(newPlayer).ifPresent(newCap -> {
                 newCap.deserializeNBT(oldCap.serializeNBT());
+                // 死亡复制 NBT 时强制清掉战斗状态 — 死时武器掉落, 重生 weaponDrawn=true 会让玩家
+                // 一捡到武器就被强制第三人称(updateCamera 看到 drawn=true), 也会渲染错误的拔刀动画。
+                if (event.isWasDeath()) {
+                    newCap.setState(CombatState.IDLE);
+                    newCap.setStateTimer(0);
+                    newCap.setWeaponDrawn(false);
+                    newCap.resetCombo();
+                }
             });
         });
         original.invalidateCaps();

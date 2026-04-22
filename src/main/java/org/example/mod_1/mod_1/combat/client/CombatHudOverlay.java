@@ -27,7 +27,15 @@ public class CombatHudOverlay {
         );
     }
 
-    // === Combo pop animation state (client-only, single player view) ===
+    // === IDLE 自动淡出 ===
+    // 只要发生过非 IDLE 事件就重置时间; IDLE 持续 IDLE_HOLD_MS 后开始淡出 FADE_MS,
+    // 完全透明就直接 return 不画。攻击/格挡等任何状态切换会立刻全亮重新计时。
+    private static final long IDLE_HOLD_MS = 2000L;
+    private static final long FADE_MS = 800L;
+    private static long lastNonIdleMs = 0L;
+    private static CombatState lastSeenState = CombatState.IDLE;
+
+    // === Combo pop 动画 ===
     private static int lastComboShown = 0;
     private static long lastComboChangeMs = 0L;
     private static final long COMBO_POP_MS = 200L;
@@ -37,49 +45,33 @@ public class CombatHudOverlay {
         if (mc.player == null || mc.options.hideGui) return;
 
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
-            if (!cap.isWeaponDrawn() && cap.getState() == CombatState.IDLE) return;
+            CombatState state = cap.getState();
+            if (!cap.isWeaponDrawn() && state == CombatState.IDLE) {
+                lastSeenState = state;
+                return;
+            }
+
+            // 状态变化或处于非 IDLE → 重置淡出计时
+            long now = System.currentTimeMillis();
+            if (state != CombatState.IDLE || state != lastSeenState) {
+                lastNonIdleMs = now;
+            }
+            lastSeenState = state;
+
+            float alpha = computeAlpha(state, now);
+            if (alpha <= 0.01f) return;  // 完全透明就别画
 
             int screenW = mc.getWindow().getGuiScaledWidth();
             int screenH = mc.getWindow().getGuiScaledHeight();
 
-            renderStateLine(gg, mc, cap, screenW, screenH);
+            renderStateLine(gg, mc, cap, screenW, screenH, alpha);
             renderComboCount(gg, mc, cap, screenW, screenH);
             renderDodgeCooldown(gg, mc, cap, screenW, screenH);
             renderHeavyChargeBar(gg, mc, cap, screenW, screenH);
         });
     }
 
-    // === 状态条: [武器] 状态 — 半透明黑底 + 状态色边框, 屏幕底部居中 ===
-    private static void renderStateLine(GuiGraphics gg, Minecraft mc, ICombatCapability cap, int screenW, int screenH) {
-        Component weaponLabel = weaponName(cap.getWeaponType());
-        Component stateLabel = stateName(cap);
-        Component combined = Component.empty()
-                .append(Component.literal("[").append(weaponLabel).append("] ").withStyle(s -> s.withColor(0xC0C0C0)))
-                .append(stateLabel.copy().withStyle(s -> s.withColor(0xFFFFFF)));
-
-        int textW = mc.font.width(combined);
-        int padX = 6;
-        int padY = 3;
-        int boxW = textW + padX * 2;
-        int boxH = mc.font.lineHeight + padY * 2;
-        int x = (screenW - boxW) / 2;
-        int y = screenH - 64;
-
-        int borderColor = stateAccentColor(cap);
-        drawPill(gg, x, y, boxW, boxH, 0xC0000000, borderColor);
-
-        // 拔刀指示: 在 box 左侧留个小色块 (像电源灯)
-        if (cap.isWeaponDrawn()) {
-            int dotSize = 3;
-            int dotX = x - dotSize - 3;
-            int dotY = y + (boxH - dotSize) / 2;
-            gg.fill(dotX, dotY, dotX + dotSize, dotY + dotSize, 0xFFFFAA00);
-        }
-
-        gg.drawString(mc.font, combined, x + padX, y + padY, 0xFFFFFFFF, true);
-    }
-
-    // === Combo 数字: 大号显示, 增量时弹出动画, 3 段附加 FINISHER! 标签 ===
+    // === Combo 数字: 大号显示在右侧, 增量时弹出动画 (不再显示 FINISHER 标签) ===
     private static void renderComboCount(GuiGraphics gg, Minecraft mc, ICombatCapability cap, int screenW, int screenH) {
         int combo = cap.getComboCount();
         if (combo <= 0) return;
@@ -101,7 +93,6 @@ public class CombatHudOverlay {
         }
 
         String comboText = combo + "x";
-        int textW = mc.font.width(comboText);
         int anchorX = screenW - 32;
         int anchorY = screenH / 2;
 
@@ -112,7 +103,7 @@ public class CombatHudOverlay {
         int color = switch (combo) {
             case 1 -> 0xFFFFFFFF;
             case 2 -> 0xFFFFCC33;
-            default -> 0xFFFF3333;
+            default -> 0xFFFF3333;  // combo 3+ 仍走更醒目的红色, 表示终结段
         };
 
         gg.pose().pushMatrix();
@@ -124,18 +115,49 @@ public class CombatHudOverlay {
         gg.drawString(mc.font, comboText, 0, 1, 0x80000000, false);
         gg.drawString(mc.font, comboText, 0, 0, color, true);
         gg.pose().popMatrix();
+    }
 
-        // 第 3 段: FINISHER! 标签, 比 combo 数字小一号, 略偏下
-        if (combo >= 3) {
-            Component finisher = Component.translatable("hud.mod_1.combo.finisher");
-            int finW = mc.font.width(finisher);
-            int finX = anchorX + (textW - finW) / 2;
-            int finY = anchorY + (int) (mc.font.lineHeight * scale) + 2;
-            // 闪烁: 200ms 周期
-            int phase = (int) (System.currentTimeMillis() / 200) % 2;
-            int finColor = phase == 0 ? 0xFFFFD700 : 0xFFFFFFFF;
-            drawShadowedText(gg, mc, finisher, finX, finY, finColor);
+    // 处于非 IDLE → 全亮 (1.0); IDLE 但小于 hold 时间 → 仍全亮; 超过 hold → 在 FADE_MS 内线性淡出。
+    private static float computeAlpha(CombatState state, long now) {
+        if (state != CombatState.IDLE) return 1.0f;
+        long idleFor = now - lastNonIdleMs;
+        if (idleFor < IDLE_HOLD_MS) return 1.0f;
+        long fading = idleFor - IDLE_HOLD_MS;
+        if (fading >= FADE_MS) return 0.0f;
+        return 1.0f - (fading / (float) FADE_MS);
+    }
+
+    // === 状态条: [武器] 状态 — 半透明黑底 + 状态色边框, 屏幕底部居中 ===
+    private static void renderStateLine(GuiGraphics gg, Minecraft mc, ICombatCapability cap, int screenW, int screenH, float alpha) {
+        Component weaponLabel = weaponName(cap.getWeaponType());
+        Component stateLabel = stateName(cap);
+        int textColor = applyAlpha(0xFFFFFFFF, alpha);
+        int weaponLabelColor = applyAlpha(0xFFC0C0C0, alpha);
+        Component combined = Component.empty()
+                .append(Component.literal("[").append(weaponLabel).append("] "))
+                .append(stateLabel.copy());
+
+        int textW = mc.font.width(combined);
+        int padX = 6;
+        int padY = 3;
+        int boxW = textW + padX * 2;
+        int boxH = mc.font.lineHeight + padY * 2;
+        int x = (screenW - boxW) / 2;
+        int y = screenH - 64;
+
+        int bgColor = applyAlpha(0xC0000000, alpha);
+        int borderColor = applyAlpha(stateAccentColor(cap), alpha);
+        drawPill(gg, x, y, boxW, boxH, bgColor, borderColor);
+
+        // 拔刀指示: 在 box 左侧留个小色块 (像电源灯)
+        if (cap.isWeaponDrawn()) {
+            int dotSize = 3;
+            int dotX = x - dotSize - 3;
+            int dotY = y + (boxH - dotSize) / 2;
+            gg.fill(dotX, dotY, dotX + dotSize, dotY + dotSize, applyAlpha(0xFFFFAA00, alpha));
         }
+
+        gg.drawString(mc.font, combined, x + padX, y + padY, textColor, true);
     }
 
     // === 闪避 CD 条: 进度条 + 标签 ===
@@ -240,15 +262,7 @@ public class CombatHudOverlay {
             case IDLE -> Component.translatable("hud.mod_1.state.idle");
             case DRAW_WEAPON -> Component.translatable("hud.mod_1.state.draw");
             case SHEATH_WEAPON -> Component.translatable("hud.mod_1.state.sheath");
-            case ATTACK_LIGHT -> {
-                int combo = cap.getComboCount();
-                if (combo > 0 && combo != 99) {
-                    yield Component.translatable("hud.mod_1.state.attack_light")
-                            .append(Component.literal(" " + combo));
-                } else {
-                    yield Component.translatable("hud.mod_1.state.attack_light");
-                }
-            }
+            case ATTACK_LIGHT -> attackLightName(cap);
             case ATTACK_HEAVY -> Component.translatable("hud.mod_1.state.attack_heavy");
             case ATTACK_HEAVY_CHARGING -> Component.translatable("hud.mod_1.state.heavy_charging");
             case DODGE -> Component.translatable("hud.mod_1.state.dodge");
@@ -257,6 +271,22 @@ public class CombatHudOverlay {
             case INSPECT -> Component.translatable("hud.mod_1.state.inspect");
             default -> Component.literal(s.name());
         };
+    }
+
+    // 轻攻击文字按 武器+combo 走 lang key, 用户改 lang/资源包就能自定义 (例如 "招式一" / "突刺·二").
+    // key 形如: hud.mod_1.combo.sword.1 / hud.mod_1.combo.spear.2 / hud.mod_1.combo.sprint
+    private static Component attackLightName(ICombatCapability cap) {
+        int combo = cap.getComboCount();
+        if (combo == 99) return Component.translatable("hud.mod_1.combo.sprint");
+        String weaponKey = switch (cap.getWeaponType()) {
+            case SWORD -> "sword";
+            case SPEAR -> "spear";
+            default -> "unarmed";
+        };
+        if (combo >= 1 && combo <= 3) {
+            return Component.translatable("hud.mod_1.combo." + weaponKey + "." + combo);
+        }
+        return Component.translatable("hud.mod_1.state.attack_light");
     }
 
     // 状态色: 用于 pill 边框色, 给玩家"颜色 = 状态"的快速反馈.
@@ -276,5 +306,11 @@ public class CombatHudOverlay {
     private static float easeOutCubic(float t) {
         float u = 1.0f - t;
         return 1.0f - u * u * u;
+    }
+
+    // alpha (0..1) 应用到 ARGB 颜色的 alpha 通道
+    private static int applyAlpha(int argb, float alpha) {
+        int a = Math.max(0, Math.min(255, (int) (((argb >>> 24) & 0xFF) * alpha)));
+        return (a << 24) | (argb & 0x00FFFFFF);
     }
 }

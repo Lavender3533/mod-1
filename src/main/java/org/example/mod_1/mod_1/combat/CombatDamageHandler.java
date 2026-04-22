@@ -184,6 +184,9 @@ public class CombatDamageHandler {
         Vec3 lookVec = player.getLookAngle();
         Vec3 eyePos = player.getEyePosition();
         double cosThreshold = Math.cos(Math.toRadians(angleDeg / 2.0));
+        // Ray-vs-AABB 兜底:从眼睛沿视线推出 range 长度的"刺击线", 哪怕角度判定漏了也能命中。
+        // 主要救场矛 (angle 30°) 这种瞄准但中心点偏一两度就失之千里的情况。
+        Vec3 rayEnd = eyePos.add(lookVec.scale(range));
 
         return player.level().getEntities(player, searchBox, entity -> {
             if (entity == player) return false;
@@ -205,6 +208,10 @@ public class CombatDamageHandler {
             // 贴身距离 (< 0.6 格) 跳过角度检测 — 实体已经撞到玩家身上了, 不该因为"中心点偏一点"就漏判
             if (dist < 0.6) return true;
 
+            // Ray-vs-AABB: 视线刺到包围盒, 距离不超过 range → 命中 (不用走角度判定)
+            if (box.clip(eyePos, rayEnd).isPresent()) return true;
+
+            // 锥形角度判定 (向最近点的方向)
             Vec3 toClosestNorm = toClosest.normalize();
             double dot = lookVec.x * toClosestNorm.x + lookVec.y * toClosestNorm.y + lookVec.z * toClosestNorm.z;
             return dot >= cosThreshold;

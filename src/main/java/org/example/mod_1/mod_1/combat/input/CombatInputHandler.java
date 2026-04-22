@@ -135,7 +135,10 @@ public class CombatInputHandler {
         for (var player : mc.level.players()) {
             if (player == mc.player) continue;
             CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
-                CombatStateMachine.tick(cap, mc.level.getGameTime());
+                // 远端玩家不跑 state machine — state/stateTimer/combo 全由 CombatSyncPacket 写入。
+                // 之前在这里跑 CombatStateMachine.tick 会让本地 timer 独立倒数, 跟服务端 sync 不同步:
+                // 比如疯狂连击时, 本地 timer 提前到 0 把 state 过期成 IDLE, 紧接着 sync 包来了又拉回 ATTACK_LIGHT,
+                // 动画就在攻击/待战之间抽搐一下。
                 if (player instanceof AbstractClientPlayer clientPlayer) {
                     CombatAnimationController.updateAnimation(clientPlayer, cap);
                 }

@@ -38,13 +38,16 @@ public class CombatAnimationController {
     private static boolean loaded = false;
     private static final Map<Integer, AnimationRuntime> RUNTIMES = new HashMap<>();
 
-    // 上半身专属动作：攻击/格挡/招架/重击蓄力。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
+    // 上半身专属动作：攻击/格挡/招架/重击蓄力/拔刀/收刀。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
+    // DRAW/SHEATH 加进来是为了走路时拔刀/收刀腿能跟着 walk 动画走, 否则腿停在拔刀关键帧静态值很怪。
     private static final Set<CombatState> UPPER_BODY_ONLY_STATES = EnumSet.of(
             CombatState.ATTACK_LIGHT,
             CombatState.ATTACK_HEAVY,
             CombatState.ATTACK_HEAVY_CHARGING,
             CombatState.BLOCK,
-            CombatState.PARRY
+            CombatState.PARRY,
+            CombatState.DRAW_WEAPON,
+            CombatState.SHEATH_WEAPON
     );
 
     private static final Set<String> LOWER_BODY_BONES = Set.of(

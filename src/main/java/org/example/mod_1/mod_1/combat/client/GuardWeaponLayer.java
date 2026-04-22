@@ -64,13 +64,13 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
             // THIRD_PERSON_RIGHT_HAND already carries the held-item display transform.
             // Below is the BLOCK-specific guard correction baseline (调到满意后烘焙的值)。
-            poseStack.mulPose(Axis.YP.rotationDegrees(-10.0F));
-            poseStack.mulPose(Axis.ZP.rotationDegrees(-8.0F));
-            poseStack.mulPose(Axis.XP.rotationDegrees(-20.0F));   // baked from sword_rot
-            poseStack.translate(-0.11F, 0.01F, 0.01F);             // baked from sword_pos
-            // baked from sword_blade_roll = -305° around blade axis
+            poseStack.mulPose(Axis.YP.rotationDegrees(-15.0F));   // baked from sword_rot Y (-10 base + -5 delta)
+            poseStack.mulPose(Axis.ZP.rotationDegrees(-13.0F));   // baked from sword_rot Z (-8 base + -5 delta)
+            poseStack.mulPose(Axis.XP.rotationDegrees(-30.0F));   // baked from sword_rot X (-20 base + -10 delta)
+            poseStack.translate(0.04F, 0.11F, 0.01F);             // baked from sword_pos (-0.11+0.15, 0.01+0.10, 0.01+0)
+            // baked from sword_blade_roll = -310° around blade axis (-305 base + -5 delta)
             poseStack.mulPose(new Quaternionf().rotateAxis(
-                    (float) Math.toRadians(-305.0F), 0.0F, 0.574F, -0.819F));
+                    (float) Math.toRadians(-310.0F), 0.0F, 0.574F, -0.819F));
 
             // Live tweaker — 叠加调试偏移（继续微调时使用，记得调完按 ' 重置）
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getSwordRot(0)));
