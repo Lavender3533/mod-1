@@ -14,9 +14,6 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.MapColor;
 import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.client.event.EntityRenderersEvent;
-import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
-import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.server.ServerStartingEvent;
 import net.minecraftforge.eventbus.api.bus.BusGroup;
@@ -26,14 +23,11 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.fml.loading.FMLEnvironment;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import org.example.mod_1.mod_1.combat.client.CombatAnimationController;
-import org.example.mod_1.mod_1.combat.client.CombatHudOverlay;
-import org.example.mod_1.mod_1.combat.client.CombatPlayerModel;
-import org.example.mod_1.mod_1.combat.client.CombatRendererManager;
-import org.example.mod_1.mod_1.combat.input.CombatKeyBindings;
 import org.example.mod_1.mod_1.combat.item.ModItems;
 import org.example.mod_1.mod_1.combat.ModSounds;
 import org.example.mod_1.mod_1.combat.network.CombatNetworkChannel;
@@ -102,27 +96,11 @@ public class Mod_1 {
         // Initialize combat network channel
         CombatNetworkChannel.init();
 
-        // Register key mappings via the mod bus group's specific event bus
-        RegisterKeyMappingsEvent.getBus(modBusGroup).addListener(CombatKeyBindings::registerKeys);
-
-        // Register 17-bone model layer definitions (wide + slim) + 单独的 cape layer
-        EntityRenderersEvent.RegisterLayerDefinitions.getBus(modBusGroup).addListener(event -> {
-            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION, CombatPlayerModel::createBodyLayer);
-            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION_SLIM, CombatPlayerModel::createSlimBodyLayer);
-            event.registerLayerDefinition(CombatPlayerModel.LAYER_LOCATION_CAPE, CombatPlayerModel::createCapeLayer);
-        });
-
-        // Initialize combat renderer when layers are added
-        EntityRenderersEvent.AddLayers.getBus(modBusGroup).addListener(event -> {
-            CombatRendererManager.init(event.getContext());
-        });
-
-        // Register combat HUD overlay
-        AddGuiOverlayLayersEvent.BUS.addListener(CombatHudOverlay::register);
-
-        // Register mouse button interceptor (cancel vanilla attack/use when weapon drawn)
-        net.minecraftforge.client.event.InputEvent.MouseButton.Pre.BUS.addListener(
-                org.example.mod_1.mod_1.combat.input.CombatInputHandler::onMouseButton);
+        // 客户端专属注册 (按键/渲染/HUD/鼠标输入) — 必须在 Dist.CLIENT 检查里, 否则
+        // 服务端 (DEDICATED_SERVER) 加载 Mod_1 类时会触发 ClassNotFoundException.
+        if (net.minecraftforge.fml.loading.FMLEnvironment.dist.isClient()) {
+            org.example.mod_1.mod_1.combat.client.ClientSetup.register(modBusGroup);
+        }
     }
 
     // You can use EventBusSubscriber to automatically register all static methods in the class annotated with @SubscribeEvent
