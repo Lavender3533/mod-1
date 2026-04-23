@@ -97,6 +97,17 @@ minecraft {
             property 'forge.enabledGameTestNamespaces', mod_id
         }
 
+        // Second client for local multiplayer testing — runs as user "Dev2" so server doesn't kick first client.
+        // Use: ./gradlew runClient2  (or runClient3, etc.)
+        client2 {
+            parent runs.client
+            args '--username', 'Dev2'
+        }
+        client3 {
+            parent runs.client
+            args '--username', 'Dev3'
+        }
+
         server {
             property 'forge.enabledGameTestNamespaces', mod_id
             args '--nogui'

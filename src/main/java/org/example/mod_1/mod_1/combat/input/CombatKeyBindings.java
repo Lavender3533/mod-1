@@ -80,7 +80,8 @@ public class CombatKeyBindings {
         event.register(INSPECT);
         event.register(HEAVY_ATTACK);
         event.register(RELOAD_ANIMATIONS);
-        // Pose tweakers 暂时隐藏 — 字段/处理逻辑保留, 需要再调姿势时只要把下面 6 行取消注释即可。
+        // Pose tweakers 隐藏 — 字段/处理逻辑保留, 需要再调姿势时把下面 6 行
+        // 和 CombatInputHandler.handleKeyBindings 末尾 6 行 while 一起取消注释。
         // event.register(POSE_CYCLE_BONE);
         // event.register(POSE_CYCLE_AXIS);
         // event.register(POSE_DECREASE);

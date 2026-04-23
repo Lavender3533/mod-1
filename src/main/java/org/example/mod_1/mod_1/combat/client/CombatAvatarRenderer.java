@@ -68,7 +68,10 @@ public class CombatAvatarRenderer
                 CombatAnimationController.updateAnimation(player, cap);
                 weaponDrawnRef[0] = cap.isWeaponDrawn();
                 CombatState combatState = cap.getState();
+                // GuardWeaponLayer 对剑/矛都做自定义格挡渲染, 这里相应地把 vanilla item layer 抑制掉
                 customGuardRef[0] = weaponDrawnRef[0]
+                        && (cap.getWeaponType() == org.example.mod_1.mod_1.combat.WeaponType.SWORD
+                            || cap.getWeaponType() == org.example.mod_1.mod_1.combat.WeaponType.SPEAR)
                         && (combatState == CombatState.BLOCK || combatState == CombatState.PARRY);
             });
             weaponDrawn = weaponDrawnRef[0];

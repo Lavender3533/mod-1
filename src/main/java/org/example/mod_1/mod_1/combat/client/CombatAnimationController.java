@@ -115,6 +115,7 @@ public class CombatAnimationController {
             "animations/spear/anim_spear_light_3.animation.json",
             "animations/spear/anim_spear_heavy.animation.json",
             "animations/spear/anim_spear_heavy_charge.animation.json",
+            "animations/spear/anim_spear_block.animation.json",
             "animations/sword/anim_sword_inspect.animation.json",
             "animations/spear/anim_spear_inspect.animation.json",
     };
@@ -461,6 +462,7 @@ public class CombatAnimationController {
             // Live tweaker: BLOCK 和 蓄力 动画激活时叠加偏移，便于在游戏内调姿势
             String anim = runtime.currentAnim;
             if ("animation.player.block".equals(anim)
+                    || "animation.player.spear_block".equals(anim)
                     || "animation.player.sword_heavy_charge".equals(anim)
                     || "animation.player.spear_heavy_charge".equals(anim)) {
                 BlockPoseTweaker.applyDelta(part, boneName);
@@ -614,7 +616,9 @@ public class CombatAnimationController {
             case DRAW_WEAPON: return "animation.player.draw_weapon";
             case SHEATH_WEAPON: return "animation.player.sheath_weapon";
             case DODGE: return "animation.player.dodge";
-            case BLOCK: return "animation.player.block";
+            case BLOCK: return cap.getWeaponType() == WeaponType.SPEAR
+                    ? "animation.player.spear_block"
+                    : "animation.player.block";
             case PARRY: return "animation.player.parry";
             case ATTACK_LIGHT: return resolveLightAttack(weapon, cap.getComboCount());
             case ATTACK_HEAVY_CHARGING: return weapon == WeaponType.SPEAR ? "animation.player.spear_heavy_charge" : "animation.player.sword_heavy_charge";
@@ -763,6 +767,8 @@ public class CombatAnimationController {
                 || "animation.player.sword_dash_attack".equals(animName)
                 || "animation.player.sword_heavy".equals(animName)
                 || "animation.player.spear_light".equals(animName)
+                || "animation.player.spear_light_2".equals(animName)
+                || "animation.player.spear_light_3".equals(animName)
                 || "animation.player.spear_heavy".equals(animName);
     }
 
@@ -772,7 +778,10 @@ public class CombatAnimationController {
                 || "animation.player.sheath_weapon".equals(animName)
                 || "animation.player.dodge".equals(animName)
                 || "animation.player.block".equals(animName)
-                || "animation.player.parry".equals(animName);
+                || "animation.player.spear_block".equals(animName)
+                || "animation.player.parry".equals(animName)
+                || "animation.player.sword_heavy_charge".equals(animName)
+                || "animation.player.spear_heavy_charge".equals(animName);
     }
 
     private static boolean isGroundedMovementAnimation(String animName) {

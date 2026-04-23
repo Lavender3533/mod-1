@@ -42,7 +42,9 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             CombatState combatState = cap.getState();
             if (!cap.isWeaponDrawn()) return;
             if (combatState != CombatState.BLOCK && combatState != CombatState.PARRY) return;
-            if (cap.getWeaponType() != WeaponType.SWORD) return;
+            // 剑/矛都用同一套 GuardWeaponLayer + 调试通道 (sword_rot/sword_pos/sword_blade_roll).
+            // 想要分开的话以后可以拆出 SpearGuardWeaponLayer。
+            if (cap.getWeaponType() != WeaponType.SWORD && cap.getWeaponType() != WeaponType.SPEAR) return;
 
             ItemStack stack = player.getMainHandItem();
             if (stack.isEmpty()) return;
@@ -64,13 +66,22 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
             // THIRD_PERSON_RIGHT_HAND already carries the held-item display transform.
             // Below is the BLOCK-specific guard correction baseline (调到满意后烘焙的值)。
-            poseStack.mulPose(Axis.YP.rotationDegrees(-15.0F));   // baked from sword_rot Y (-10 base + -5 delta)
-            poseStack.mulPose(Axis.ZP.rotationDegrees(-13.0F));   // baked from sword_rot Z (-8 base + -5 delta)
-            poseStack.mulPose(Axis.XP.rotationDegrees(-30.0F));   // baked from sword_rot X (-20 base + -10 delta)
-            poseStack.translate(0.04F, 0.11F, 0.01F);             // baked from sword_pos (-0.11+0.15, 0.01+0.10, 0.01+0)
-            // baked from sword_blade_roll = -310° around blade axis (-305 base + -5 delta)
-            poseStack.mulPose(new Quaternionf().rotateAxis(
+            // 注意: rotation 用 mulPose 矩阵串联, 不可像 Euler 角那样直接相加 — 烘焙 tweaker 时
+            // 必须保留原 baseline 顺序 + 在末尾"追加"新 delta, 不能把度数合并到一行。
+            poseStack.mulPose(Axis.YP.rotationDegrees(-15.0F));   // baseline Y (round 1)
+            poseStack.mulPose(Axis.ZP.rotationDegrees(-13.0F));   // baseline Z (round 1)
+            poseStack.mulPose(Axis.XP.rotationDegrees(-30.0F));   // baseline X (round 1)
+            poseStack.translate(0.04F, 0.11F, 0.01F);             // baseline pos (round 1)
+            poseStack.mulPose(new Quaternionf().rotateAxis(       // baseline blade_roll (round 1)
                     (float) Math.toRadians(-310.0F), 0.0F, 0.574F, -0.819F));
+
+            // 烘焙第 2 轮 tweaker delta (剑专用, 顺序与 BlockPoseTweaker 完全一致):
+            poseStack.mulPose(Axis.XP.rotationDegrees(-5.0F));    // sword_rot X delta
+            poseStack.mulPose(Axis.YP.rotationDegrees(30.0F));    // sword_rot Y delta
+            poseStack.mulPose(Axis.ZP.rotationDegrees(-20.0F));   // sword_rot Z delta
+            poseStack.translate(0.15F, 0.0F, -0.10F);             // sword_pos delta
+            poseStack.mulPose(new Quaternionf().rotateAxis(       // sword_blade_roll delta
+                    (float) Math.toRadians(-10.0F), 0.0F, 0.574F, -0.819F));
 
             // Live tweaker — 叠加调试偏移（继续微调时使用，记得调完按 ' 重置）
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getSwordRot(0)));

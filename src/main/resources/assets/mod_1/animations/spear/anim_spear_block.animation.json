@@ -1,7 +1,7 @@
 {
   "format_version": "1.8.0",
   "animations": {
-    "animation.player.block": {
+    "animation.player.spear_block": {
       "loop": true,
       "animation_length": 1.5,
       "bones": {
@@ -49,9 +49,9 @@
         },
         "rightLowerArm": {
           "rotation": {
-            "0.0": [-105, 20, 0],
-            "0.75": [-106, 20, 0],
-            "1.5": [-105, 20, 0]
+            "0.0": [-100, 20, 0],
+            "0.75": [-101, 20, 0],
+            "1.5": [-100, 20, 0]
           }
         },
         "rightHand": {
@@ -63,9 +63,9 @@
         },
         "leftUpperArm": {
           "rotation": {
-            "0.0": [-15, 37, 10],
-            "0.75": [-17, 37, 10],
-            "1.5": [-15, 37, 10]
+            "0.0": [-35, 12, 10],
+            "0.75": [-37, 12, 10],
+            "1.5": [-35, 12, 10]
           }
         },
         "leftLowerArm": {
