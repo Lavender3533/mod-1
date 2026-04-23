@@ -279,7 +279,9 @@ public class CombatDefenseHandler {
             return isProjectileFromFront(player, proj);
         }
         if (source.getSourcePosition() == null) return true;
-        Vec3 attackDir = source.getSourcePosition().subtract(player.getEyePosition()).normalize();
+        Vec3 delta = source.getSourcePosition().subtract(player.getEyePosition());
+        if (delta.lengthSqr() < 1.0e-6) return true; // 攻击者跟玩家重叠, 当作"前面来"避免 normalize 出 NaN
+        Vec3 attackDir = delta.normalize();
         Vec3 lookDir = player.getLookAngle();
         double dot = attackDir.x * lookDir.x + attackDir.z * lookDir.z;
         double cosThreshold = Math.cos(Math.toRadians(Config.blockAngle / 2.0));
