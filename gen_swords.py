@@ -154,7 +154,7 @@ def generate_sword(path, blade_hex, handle_hex, guard_hex=None, accent_hex=None,
 
 
 if __name__ == "__main__":
-    base = "/home/dkjsiogu/文档/mod/mod-1/src/main/resources/assets/mod_1/textures/item"
+    base = "/home/dkjsiogu/文档/mod/mod-1/src/main/resources/assets/combat_arts/textures/item"
 
     swords = [
         {

@@ -1,0 +1,80 @@
+{
+  "combat.draw_weapon": {
+    "subtitle": "subtitles.combat_arts.combat.draw_weapon",
+    "sounds": [
+      { "name": "minecraft:item.armor.equip_iron", "type": "event" }
+    ]
+  },
+  "combat.sheath_weapon": {
+    "subtitle": "subtitles.combat_arts.combat.sheath_weapon",
+    "sounds": [
+      { "name": "minecraft:item.armor.equip_iron", "type": "event" }
+    ]
+  },
+  "combat.sword_light_1": {
+    "subtitle": "subtitles.combat_arts.combat.sword_swing",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.sweep", "type": "event" }
+    ]
+  },
+  "combat.sword_light_2": {
+    "subtitle": "subtitles.combat_arts.combat.sword_swing",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.sweep", "type": "event" }
+    ]
+  },
+  "combat.sword_light_3": {
+    "subtitle": "subtitles.combat_arts.combat.sword_swing",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.sweep", "type": "event" }
+    ]
+  },
+  "combat.sword_heavy": {
+    "subtitle": "subtitles.combat_arts.combat.sword_heavy",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.strong", "type": "event" }
+    ]
+  },
+  "combat.sword_dash": {
+    "subtitle": "subtitles.combat_arts.combat.sword_dash",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.sweep", "type": "event" }
+    ]
+  },
+  "combat.spear_light": {
+    "subtitle": "subtitles.combat_arts.combat.spear_thrust",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.weak", "type": "event" }
+    ]
+  },
+  "combat.spear_heavy": {
+    "subtitle": "subtitles.combat_arts.combat.spear_heavy",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.strong", "type": "event" }
+    ]
+  },
+  "combat.attack_hit": {
+    "subtitle": "subtitles.combat_arts.combat.hit",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.strong", "type": "event" }
+    ]
+  },
+  "combat.dodge": {
+    "subtitle": "subtitles.combat_arts.combat.dodge",
+    "sounds": [
+      { "name": "minecraft:entity.player.attack.sweep", "type": "event" }
+    ]
+  },
+  "combat.block": {
+    "subtitle": "subtitles.combat_arts.combat.block",
+    "sounds": [
+      { "name": "minecraft:item.shield.block", "type": "event" }
+    ]
+  },
+  "combat.parry": {
+    "subtitle": "subtitles.combat_arts.combat.parry",
+    "sounds": [
+      { "name": "minecraft:item.shield.block", "type": "event" }
+    ]
+  }
+}

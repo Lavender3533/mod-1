@@ -2,7 +2,7 @@
 
 > 给接手开发者的实施文档
 > 项目: MC 1.21.11 Forge 61.0.6 战斗动画 Mod
-> 路径: D:/project/technique/mod_1/
+> 路径: D:/project/technique/combat_arts/
 
 ---
 
@@ -68,8 +68,8 @@ CombatAnimationController  — [已有] 动画插值引擎，改为接受 Map<St
 | 新建 | `mixin/EntityRenderDispatcherMixin.java` | 渲染器替换 |
 | 修改 | `combat/client/CombatAnimationController.java` | 删 getAnimatable, 改 applyTo17Bones 签名 |
 | 修改 | `mixin/PlayerModelMixin.java` | 可删除（不再需要 6 骨骼合并） |
-| 修改 | `mod_1.mixins.json` | 添加新 mixin |
-| 修改 | `Mod_1.java` | 注册模型层事件 |
+| 修改 | `combat_arts.mixins.json` | 添加新 mixin |
+| 修改 | `CombatArts.java` | 注册模型层事件 |
 
 ---
 
@@ -78,13 +78,13 @@ CombatAnimationController  — [已有] 动画插值引擎，改为接受 Map<St
 ### 4.1 类定义
 
 ```java
-package org.example.mod_1.mod_1.combat.client;
+package org.example.combatarts.combat.client;
 
 public class CombatPlayerModel extends EntityModel<AvatarRenderState>
                                implements ArmedModel<AvatarRenderState>, HeadedModel {
 
     public static final ModelLayerLocation LAYER_LOCATION =
-        new ModelLayerLocation(Identifier.fromNamespaceAndPath("mod_1", "combat_player"), "main");
+        new ModelLayerLocation(Identifier.fromNamespaceAndPath("combat_arts", "combat_player"), "main");
 
     // 所有 17 个骨骼引用
     public final Map<String, ModelPart> boneMap = new HashMap<>();
@@ -349,7 +349,7 @@ private void applyVanillaFallback(AvatarRenderState state) {
 ### 5.1 类定义
 
 ```java
-package org.example.mod_1.mod_1.combat.client;
+package org.example.combatarts.combat.client;
 
 public class CombatAvatarRenderer
     extends LivingEntityRenderer<AbstractClientPlayer, AvatarRenderState, CombatPlayerModel> {
@@ -402,7 +402,7 @@ public class CombatAvatarRenderer
 ## 六、EntityRenderDispatcherMixin — 渲染器替换
 
 ```java
-package org.example.mod_1.mod_1.mixin;
+package org.example.combatarts.mixin;
 
 @Mixin(EntityRenderDispatcher.class)
 public class EntityRenderDispatcherMixin {
@@ -459,7 +459,7 @@ private <T extends Entity> void mod1_swapCombatRenderer(T entity, CallbackInfoRe
 ## 七、CombatRendererManager — 渲染器缓存
 
 ```java
-package org.example.mod_1.mod_1.combat.client;
+package org.example.combatarts.combat.client;
 
 public class CombatRendererManager {
     private static CombatAvatarRenderer renderer;
@@ -477,7 +477,7 @@ public class CombatRendererManager {
 
 ### 7.1 注册时机
 
-在 `Mod_1.java` 的客户端事件中注册:
+在 `CombatArts.java` 的客户端事件中注册:
 
 ```java
 // 注册 LayerDefinition
@@ -518,15 +518,15 @@ public static void applyTo17Bones(Map<String, ModelPart> boneMap) {
 
 ---
 
-## 九、mod_1.mixins.json
+## 九、combat_arts.mixins.json
 
 ```json
 {
   "required": true,
   "minVersion": "0.8",
-  "package": "org.example.mod_1.mod_1.mixin",
+  "package": "org.example.combatarts.mixin",
   "compatibilityLevel": "JAVA_21",
-  "refmap": "mod_1.refmap.json",
+  "refmap": "combat_arts.refmap.json",
   "mixins": [],
   "client": [
     "PlayerModelMixin",
@@ -636,7 +636,7 @@ animations/spear/    — idle, light, heavy (3 个)
 2. `CombatAnimationController.java` — 改签名，删 getAnimatable
 3. `CombatAvatarRenderer.java` — 写渲染器，先只加 `PlayerItemInHandLayer`
 4. `CombatRendererManager.java` — 简单的缓存类
-5. `Mod_1.java` — 注册事件
+5. `CombatArts.java` — 注册事件
 6. `EntityRenderDispatcherMixin.java` — Mixin 替换
-7. `mod_1.mixins.json` — 加新 mixin
+7. `combat_arts.mixins.json` — 加新 mixin
 8. 编译测试 → 调坐标 → 调动画

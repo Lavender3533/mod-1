@@ -121,7 +121,7 @@ def generate_spear(path, blade_hex, shaft_hex, accent_hex=None, netherite=False)
 
 
 if __name__ == "__main__":
-    base = "/home/dkjsiogu/文档/mod/mod-1/src/main/resources/assets/mod_1/textures/item"
+    base = "/home/dkjsiogu/文档/mod/mod-1/src/main/resources/assets/combat_arts/textures/item"
 
     spears = [
         {
