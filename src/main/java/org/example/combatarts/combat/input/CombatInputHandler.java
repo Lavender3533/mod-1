@@ -98,11 +98,9 @@ public class CombatInputHandler {
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
 
-            // 检视打断：移动/攻击输入时退出 INSPECT，或动画播放完毕自动退出
+            // 检视打断：仅冲刺打断（慢走允许保持检视姿态），或动画播放完毕自动退出
             if (cap.getState() == CombatState.INSPECT) {
-                double dx = mc.player.getX() - mc.player.xOld;
-                double dz = mc.player.getZ() - mc.player.zOld;
-                if (dx * dx + dz * dz > 0.001 || CombatAnimationController.isCurrentAnimFinished(mc.player)) {
+                if (mc.player.isSprinting() || CombatAnimationController.isCurrentAnimFinished(mc.player)) {
                     requestWithPrediction(cap, CombatState.IDLE);
                 }
             }

@@ -28,8 +28,8 @@ public class CombatAnimationController {
     private static final float TRANSITION_SECS = 0.18f;
     private static final float LOCOMOTION_TRANSITION_SECS = 0.10f;
     private static final float STOP_TRANSITION_SECS = 0.14f;
-    private static final float ATTACK_CHAIN_TRANSITION_SECS = 0.06f;
-    private static final float ACTION_ENTRY_TRANSITION_SECS = 0.08f;
+    private static final float ATTACK_CHAIN_TRANSITION_SECS = 0.08f;
+    private static final float ACTION_ENTRY_TRANSITION_SECS = 0.12f;
 
     // animName -> boneName -> keyframes [time, rx, ry, rz]
     private static final Map<String, Map<String, List<float[]>>> ANIM_DATA = new HashMap<>();
@@ -103,6 +103,8 @@ public class CombatAnimationController {
             "animations/combat/anim_block.animation.json",
             "animations/combat/anim_parry.animation.json",
             "animations/sword/anim_sword_idle.animation.json",
+            "animations/sword/anim_sword_walk.animation.json",
+            "animations/sword/anim_sword_run.animation.json",
             "animations/sword/anim_sword_light_1.animation.json",
             "animations/sword/anim_sword_light_2.animation.json",
             "animations/sword/anim_sword_light_3.animation.json",
@@ -110,6 +112,8 @@ public class CombatAnimationController {
             "animations/sword/anim_sword_heavy_charge.animation.json",
             "animations/sword/anim_sword_dash_attack.animation.json",
             "animations/spear/anim_spear_idle.animation.json",
+            "animations/spear/anim_spear_walk.animation.json",
+            "animations/spear/anim_spear_run.animation.json",
             "animations/spear/anim_spear_light.animation.json",
             "animations/spear/anim_spear_light_2.animation.json",
             "animations/spear/anim_spear_light_3.animation.json",
@@ -231,13 +235,9 @@ public class CombatAnimationController {
         loadAnimations();
         AnimationRuntime runtime = getRuntime(player);
 
-        // 检视打断：移动时自动退出 INSPECT
-        if (cap.getState() == CombatState.INSPECT) {
-            double dx = player.getX() - player.xOld;
-            double dz = player.getZ() - player.zOld;
-            if (dx * dx + dz * dz > 0.001) {
-                return; // 移动检测到，由 CombatInputHandler 发送状态切换
-            }
+        // 检视打断：仅冲刺时自动退出 INSPECT（慢走允许保持检视姿态）
+        if (cap.getState() == CombatState.INSPECT && player.isSprinting()) {
+            return; // 冲刺检测到，由 CombatInputHandler 发送状态切换
         }
 
         String animName = resolveAnimationName(player, cap, runtime);
@@ -632,6 +632,7 @@ public class CombatAnimationController {
 
     private static String resolveLocomotionAnim(AbstractClientPlayer player, ICombatCapability cap, AnimationRuntime runtime) {
         WeaponType weapon = cap.getWeaponType();
+        boolean drawn = cap.isWeaponDrawn();
 
         String detected;
         if (player.isCrouching()) {
@@ -639,18 +640,17 @@ public class CombatAnimationController {
         } else if (!player.onGround()) {
             detected = "animation.player.jump";
         } else if (player.isSprinting()) {
-            detected = "animation.player.run";
+            detected = resolveWeaponRun(weapon, drawn);
         } else {
             double dx = player.getX() - player.xOld;
             double dz = player.getZ() - player.zOld;
             double hSpeedSq = dx * dx + dz * dz;
             // Hysteresis: higher threshold to enter walk, lower to exit
-            boolean wasMoving = "animation.player.walk".equals(runtime.lastMovementAnim)
-                    || "animation.player.run".equals(runtime.lastMovementAnim);
+            boolean wasMoving = isLocomotionAnimation(runtime.lastMovementAnim);
             if (hSpeedSq > (wasMoving ? 0.00001 : 0.0004)) {
-                detected = "animation.player.walk";
+                detected = resolveWeaponWalk(weapon, drawn);
             } else {
-                detected = cap.isWeaponDrawn() ? resolveWeaponIdle(weapon) : "animation.player.idle";
+                detected = drawn ? resolveWeaponIdle(weapon) : "animation.player.idle";
             }
         }
 
@@ -698,10 +698,10 @@ public class CombatAnimationController {
         double dz = player.getZ() - player.zOld;
         double horizontalSpeed = Math.sqrt(dx * dx + dz * dz);
 
-        if ("animation.player.walk".equals(animName)) {
+        if (isWalkAnimation(animName)) {
             return clamp((float) (horizontalSpeed / 0.10), 0.72f, 1.18f);
         }
-        if ("animation.player.run".equals(animName)) {
+        if (isRunAnimation(animName)) {
             return clamp((float) (horizontalSpeed / 0.17), 0.90f, 1.18f);
         }
         return 1.0f;
@@ -747,7 +747,23 @@ public class CombatAnimationController {
 
     private static boolean isLocomotionAnimation(String animName) {
         return "animation.player.walk".equals(animName)
-                || "animation.player.run".equals(animName);
+                || "animation.player.run".equals(animName)
+                || "animation.player.sword_walk".equals(animName)
+                || "animation.player.sword_run".equals(animName)
+                || "animation.player.spear_walk".equals(animName)
+                || "animation.player.spear_run".equals(animName);
+    }
+
+    private static boolean isWalkAnimation(String animName) {
+        return "animation.player.walk".equals(animName)
+                || "animation.player.sword_walk".equals(animName)
+                || "animation.player.spear_walk".equals(animName);
+    }
+
+    private static boolean isRunAnimation(String animName) {
+        return "animation.player.run".equals(animName)
+                || "animation.player.sword_run".equals(animName)
+                || "animation.player.spear_run".equals(animName);
     }
 
     private static boolean isIdleAnimation(String animName) {
@@ -859,11 +875,32 @@ public class CombatAnimationController {
     }
 
     private static String resolveWeaponIdle(WeaponType weapon) {
-        return switch (weapon) {
+        String name = switch (weapon) {
             case SWORD -> "animation.player.sword_idle";
             case SPEAR -> "animation.player.spear_idle";
             default -> "animation.player.idle";
         };
+        return ANIM_DATA.containsKey(name) ? name : "animation.player.idle";
+    }
+
+    private static String resolveWeaponWalk(WeaponType weapon, boolean drawn) {
+        if (!drawn) return "animation.player.walk";
+        String name = switch (weapon) {
+            case SWORD -> "animation.player.sword_walk";
+            case SPEAR -> "animation.player.spear_walk";
+            default -> "animation.player.walk";
+        };
+        return ANIM_DATA.containsKey(name) ? name : "animation.player.walk";
+    }
+
+    private static String resolveWeaponRun(WeaponType weapon, boolean drawn) {
+        if (!drawn) return "animation.player.run";
+        String name = switch (weapon) {
+            case SWORD -> "animation.player.sword_run";
+            case SPEAR -> "animation.player.spear_run";
+            default -> "animation.player.run";
+        };
+        return ANIM_DATA.containsKey(name) ? name : "animation.player.run";
     }
 
     private static float sampleAnimationTime(float timeSec, float length, boolean loop) {
@@ -878,6 +915,7 @@ public class CombatAnimationController {
 
     private static float smoothStep01(float t) {
         float clamped = clamp(t, 0.0f, 1.0f);
-        return clamped * clamped * (3.0f - 2.0f * clamped);
+        // smootherstep: 6t^5 - 15t^4 + 10t^3 (C^2 连续, 比 3t^2 - 2t^3 更平滑, 起止零导数)
+        return clamped * clamped * clamped * (clamped * (clamped * 6.0f - 15.0f) + 10.0f);
     }
 }
