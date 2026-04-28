@@ -38,16 +38,14 @@ public class CombatAnimationController {
     private static boolean loaded = false;
     private static final Map<Integer, AnimationRuntime> RUNTIMES = new HashMap<>();
 
-    // 上半身专属动作：攻击/格挡/招架/重击蓄力/拔刀/收刀。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
-    // DRAW/SHEATH 加进来是为了走路时拔刀/收刀腿能跟着 walk 动画走, 否则腿停在拔刀关键帧静态值很怪。
+    // 上半身专属动作：攻击/格挡/招架/重击蓄力。这些状态下，下半身改播 locomotion（idle/walk/run/crouch/jump）
+    // DRAW/SHEATH 不在此列表 — 它们的 JSON 自己定义了完整腿姿态(末态对齐 sword_idle), 加进来会导致结束切 IDLE 时腿跳变。
     private static final Set<CombatState> UPPER_BODY_ONLY_STATES = EnumSet.of(
             CombatState.ATTACK_LIGHT,
             CombatState.ATTACK_HEAVY,
             CombatState.ATTACK_HEAVY_CHARGING,
             CombatState.BLOCK,
-            CombatState.PARRY,
-            CombatState.DRAW_WEAPON,
-            CombatState.SHEATH_WEAPON
+            CombatState.PARRY
     );
 
     private static final Set<String> LOWER_BODY_BONES = Set.of(
@@ -256,6 +254,8 @@ public class CombatAnimationController {
         float animSpeed = resolveAnimationSpeed(player, cap, animName);
         boolean restartCurrentAnim = shouldRestartCurrentAnimation(runtime, cap, animName);
         if (restartCurrentAnim || !animName.equals(runtime.currentAnim)) {
+            LOGGER.info("[ANIM-SWITCH] {} -> {} (state={}, drawn={}, timer={})",
+                    runtime.currentAnim, animName, cap.getState(), cap.isWeaponDrawn(), cap.getStateTimer());
             boolean instantSwitch = restartCurrentAnim || shouldInstantSwitch(runtime.currentAnim, animName);
             boolean freezePrevPose = shouldFreezePreviousPose(runtime.currentAnim, animName);
             runtime.prevAnim = instantSwitch ? null : runtime.currentAnim;
@@ -459,6 +459,12 @@ public class CombatAnimationController {
             part.yRot = rot[1] * DEG_TO_RAD;
             part.zRot = rot[2] * DEG_TO_RAD;
 
+            if ("waist".equals(boneName) && runtime.prevAnim != null) {
+                LOGGER.info("[WAIST-TRANS] anim={} prev={} alpha={} rot=[{},{},{}]",
+                        runtime.currentAnim, runtime.prevAnim, srcAlpha,
+                        String.format("%.1f", rot[0]), String.format("%.1f", rot[1]), String.format("%.1f", rot[2]));
+            }
+
             // Live tweaker: BLOCK 和 蓄力 动画激活时叠加偏移，便于在游戏内调姿势
             String anim = runtime.currentAnim;
             if ("animation.player.block".equals(anim)
@@ -655,12 +661,17 @@ public class CombatAnimationController {
         }
 
         // Hold timer: require consistent state for a few ticks before switching
+        // 拔/收刀刚结束时跳过 hold — 否则前 3 帧会停在旧 idle 动画引起上身跳变
+        boolean skipHold = runtime.lastState == CombatState.DRAW_WEAPON
+                || runtime.lastState == CombatState.SHEATH_WEAPON;
         if (detected.equals(runtime.lastMovementAnim)) {
             runtime.movementHoldTicks = 0;
         } else {
-            runtime.movementHoldTicks++;
-            if (runtime.movementHoldTicks < 3) {
-                return runtime.lastMovementAnim; // keep previous state during hold period
+            if (!skipHold) {
+                runtime.movementHoldTicks++;
+                if (runtime.movementHoldTicks < 3) {
+                    return runtime.lastMovementAnim;
+                }
             }
             runtime.movementHoldTicks = 0;
         }

@@ -35,9 +35,9 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         Player player = resolvePlayer(state);
         if (player == null) return;
 
-        // 只在未拔刀时显示背后武器
+        // 渲染开关与手里渲染同步: 拔刀第 4 tick 起背后剑消失, 收刀第 6 tick 起背后剑出现
         boolean drawn = CombatCapabilityEvents.getCombat(player)
-                .map(cap -> cap.isWeaponDrawn())
+                .map(CombatCapabilityEvents::shouldRenderWeaponInHand)
                 .orElse(false);
         if (drawn) return;
 

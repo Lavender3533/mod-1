@@ -66,7 +66,7 @@ public class CombatAvatarRenderer
             final boolean[] customGuardRef = {false};
             combatOpt.ifPresent(cap -> {
                 CombatAnimationController.updateAnimation(player, cap);
-                weaponDrawnRef[0] = cap.isWeaponDrawn();
+                weaponDrawnRef[0] = CombatCapabilityEvents.shouldRenderWeaponInHand(cap);
                 CombatState combatState = cap.getState();
                 // GuardWeaponLayer 对剑/矛都做自定义格挡渲染, 这里相应地把 vanilla item layer 抑制掉
                 customGuardRef[0] = weaponDrawnRef[0]

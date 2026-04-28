@@ -42,6 +42,18 @@ public class CombatCapabilityEvents {
         return player.getCapability(COMBAT_CAPABILITY);
     }
 
+    // 渲染层用: 决定剑该挂在手里还是背后. 拔刀第 4 tick (0.20s, 手到背后抓握时) 切到手,
+    // 收刀第 6 tick (0.30s, 剑入鞘时) 切回背后. 否则直接读 isWeaponDrawn().
+    public static boolean shouldRenderWeaponInHand(ICombatCapability cap) {
+        CombatState state = cap.getState();
+        int elapsed = state.getDurationTicks() - cap.getStateTimer();
+        return switch (state) {
+            case DRAW_WEAPON -> elapsed >= 4;
+            case SHEATH_WEAPON -> elapsed < 6;
+            default -> cap.isWeaponDrawn();
+        };
+    }
+
     @SubscribeEvent
     public static void onAttachCapabilities(AttachCapabilitiesEvent.Entities event) {
         if (event.getObject() instanceof Player) {
