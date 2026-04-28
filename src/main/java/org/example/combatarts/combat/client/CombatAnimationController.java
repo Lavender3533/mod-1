@@ -14,6 +14,7 @@ import org.example.combatarts.CombatArts;
 import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.WeaponType;
 import org.example.combatarts.combat.capability.ICombatCapability;
+import org.joml.Quaternionf;
 import org.slf4j.Logger;
 
 import java.io.InputStream;
@@ -31,8 +32,8 @@ public class CombatAnimationController {
     private static final float ATTACK_CHAIN_TRANSITION_SECS = 0.08f;
     private static final float ACTION_ENTRY_TRANSITION_SECS = 0.12f;
 
-    // animName -> boneName -> keyframes [time, rx, ry, rz]
-    private static final Map<String, Map<String, List<float[]>>> ANIM_DATA = new HashMap<>();
+    // animName -> boneName -> keyframes (quaternion-based)
+    private static final Map<String, Map<String, List<Keyframe>>> ANIM_DATA = new HashMap<>();
     private static final Map<String, Float> ANIM_LENGTHS = new HashMap<>();
     private static final Map<String, Boolean> ANIM_LOOPS = new HashMap<>();
     private static boolean loaded = false;
@@ -158,6 +159,15 @@ public class CombatAnimationController {
         private boolean lowerFreezePrevOnNextApply = false;
     }
 
+    private static final class Keyframe {
+        final float time;
+        final Quaternionf rotation;
+        Keyframe(float time, float rx, float ry, float rz) {
+            this.time = time;
+            this.rotation = new Quaternionf().rotationZYX(rz * DEG_TO_RAD, ry * DEG_TO_RAD, rx * DEG_TO_RAD);
+        }
+    }
+
 
     /**
      * 热重载入口:清缓存+运行时 → 从磁盘重读所有动画 json。
@@ -191,7 +201,7 @@ public class CombatAnimationController {
                         ANIM_LENGTHS.put(animName, length);
                         ANIM_LOOPS.put(animName, loop);
 
-                        Map<String, List<float[]>> bones = new HashMap<>();
+                        Map<String, List<Keyframe>> bones = new HashMap<>();
                         JsonObject bonesObj = animObj.getAsJsonObject("bones");
                         if (bonesObj != null) {
                             for (Map.Entry<String, JsonElement> boneEntry : bonesObj.entrySet()) {
@@ -199,14 +209,15 @@ public class CombatAnimationController {
                                 JsonObject boneData = boneEntry.getValue().getAsJsonObject();
                                 JsonObject rotation = boneData.getAsJsonObject("rotation");
                                 if (rotation != null) {
-                                    List<float[]> keyframes = new ArrayList<>();
+                                    List<Keyframe> keyframes = new ArrayList<>();
                                     for (Map.Entry<String, JsonElement> kf : rotation.entrySet()) {
                                         float time = Float.parseFloat(kf.getKey());
                                         float[] rot = parseVec3(kf.getValue());
-                                        keyframes.add(new float[]{time, rot[0], rot[1], rot[2]});
+                                        keyframes.add(new Keyframe(time, rot[0], rot[1], rot[2]));
                                     }
-                                    keyframes.sort(Comparator.comparingDouble(a -> a[0]));
+                                    keyframes.sort(Comparator.comparingDouble(k -> k.time));
                                     bones.put(boneName, keyframes);
+                                }
                                 }
                             }
                         }
@@ -254,8 +265,6 @@ public class CombatAnimationController {
         float animSpeed = resolveAnimationSpeed(player, cap, animName);
         boolean restartCurrentAnim = shouldRestartCurrentAnimation(runtime, cap, animName);
         if (restartCurrentAnim || !animName.equals(runtime.currentAnim)) {
-            LOGGER.info("[ANIM-SWITCH] {} -> {} (state={}, drawn={}, timer={})",
-                    runtime.currentAnim, animName, cap.getState(), cap.isWeaponDrawn(), cap.getStateTimer());
             boolean instantSwitch = restartCurrentAnim || shouldInstantSwitch(runtime.currentAnim, animName);
             boolean freezePrevPose = shouldFreezePreviousPose(runtime.currentAnim, animName);
             runtime.prevAnim = instantSwitch ? null : runtime.currentAnim;
@@ -360,8 +369,8 @@ public class CombatAnimationController {
         }
         if (loop) timeSec = timeSec % length;
 
-        Map<String, List<float[]>> bones = ANIM_DATA.get(runtime.currentAnim);
-        Map<String, List<float[]>> prevBones = runtime.prevAnim != null ? ANIM_DATA.get(runtime.prevAnim) : null;
+        Map<String, List<Keyframe>> bones = ANIM_DATA.get(runtime.currentAnim);
+        Map<String, List<Keyframe>> prevBones = runtime.prevAnim != null ? ANIM_DATA.get(runtime.prevAnim) : null;
         float prevLength = ANIM_LENGTHS.getOrDefault(runtime.prevAnim, 1.0f);
         boolean prevLoop = ANIM_LOOPS.getOrDefault(runtime.prevAnim, false);
         if (runtime.freezePrevOnNextApply && runtime.prevAnim != null && state != null) {
@@ -389,8 +398,8 @@ public class CombatAnimationController {
 
         // Lower layer prep (only when an upper-body-only combat state is active)
         boolean lowerActive = runtime.lowerCurrentAnim != null && ANIM_DATA.containsKey(runtime.lowerCurrentAnim);
-        Map<String, List<float[]>> lowerBones = null;
-        Map<String, List<float[]>> lowerPrevBones = null;
+        Map<String, List<Keyframe>> lowerBones = null;
+        Map<String, List<Keyframe>> lowerPrevBones = null;
         float lowerTimeSec = 0f, lowerPrevTimeSec = 0f, lowerPrevLength = 1f, lowerTransitionAlpha = 1f;
         boolean lowerPrevLoop = false;
         if (lowerActive) {
@@ -431,39 +440,33 @@ public class CombatAnimationController {
             ModelPart part = boneEntry.getValue();
 
             boolean useLower = lowerActive && useLowerLayerForBone(boneName, runtime.lastState);
-            Map<String, List<float[]>> srcBones = useLower ? lowerBones : bones;
-            Map<String, List<float[]>> srcPrevBones = useLower ? lowerPrevBones : prevBones;
+            Map<String, List<Keyframe>> srcBones = useLower ? lowerBones : bones;
+            Map<String, List<Keyframe>> srcPrevBones = useLower ? lowerPrevBones : prevBones;
             float srcTime = useLower ? lowerTimeSec : timeSec;
             float srcPrevTime = useLower ? lowerPrevTimeSec : prevTimeSec;
             float srcPrevLength = useLower ? lowerPrevLength : prevLength;
             boolean srcPrevLoop = useLower ? lowerPrevLoop : prevLoop;
             float srcAlpha = useLower ? lowerTransitionAlpha : transitionAlpha;
 
-            List<float[]> kfs = srcBones.get(boneName);
+            List<Keyframe> kfs = srcBones.get(boneName);
             if (kfs == null) continue;
 
-            float[] rot = interpolate(kfs, srcTime);
+            Quaternionf rot = interpolate(kfs, srcTime);
 
             if (srcPrevBones != null && srcAlpha < 1.0f) {
-                List<float[]> prevKfs = srcPrevBones.get(boneName);
+                List<Keyframe> prevKfs = srcPrevBones.get(boneName);
                 if (prevKfs != null) {
                     float prevT = sampleAnimationTime(srcPrevTime, srcPrevLength, srcPrevLoop);
-                    float[] prevRot = interpolate(prevKfs, prevT);
-                    rot[0] = prevRot[0] + (rot[0] - prevRot[0]) * srcAlpha;
-                    rot[1] = prevRot[1] + (rot[1] - prevRot[1]) * srcAlpha;
-                    rot[2] = prevRot[2] + (rot[2] - prevRot[2]) * srcAlpha;
+                    Quaternionf prevRot = interpolate(prevKfs, prevT);
+                    nlerp(prevRot, rot, srcAlpha, rot);
                 }
             }
 
-            part.xRot = rot[0] * DEG_TO_RAD;
-            part.yRot = rot[1] * DEG_TO_RAD;
-            part.zRot = rot[2] * DEG_TO_RAD;
-
-            if ("waist".equals(boneName) && runtime.prevAnim != null) {
-                LOGGER.info("[WAIST-TRANS] anim={} prev={} alpha={} rot=[{},{},{}]",
-                        runtime.currentAnim, runtime.prevAnim, srcAlpha,
-                        String.format("%.1f", rot[0]), String.format("%.1f", rot[1]), String.format("%.1f", rot[2]));
-            }
+            float[] euler = new float[3];
+            quaternionToEulerZYX(rot, euler);
+            part.xRot = euler[0];
+            part.yRot = euler[1];
+            part.zRot = euler[2];
 
             // Live tweaker: BLOCK 和 蓄力 动画激活时叠加偏移，便于在游戏内调姿势
             String anim = runtime.currentAnim;
@@ -496,40 +499,35 @@ public class CombatAnimationController {
         }
         if (loop) timeSec = timeSec % length;
 
-        Map<String, List<float[]>> bones = ANIM_DATA.get(runtime.currentAnim);
+        Map<String, List<Keyframe>> bones = ANIM_DATA.get(runtime.currentAnim);
 
         boolean lowerActive = runtime.lowerCurrentAnim != null && ANIM_DATA.containsKey(runtime.lowerCurrentAnim);
 
-        // Accumulate rotations from all 17 bones into the 6 vanilla parts
-        float[] headRot = {0, 0, 0}, bodyRot = {0, 0, 0};
-        float[] rArmRot = {0, 0, 0}, lArmRot = {0, 0, 0};
-        float[] rLegRot = {0, 0, 0}, lLegRot = {0, 0, 0};
+        Quaternionf headQuat = new Quaternionf(), bodyQuat = new Quaternionf();
+        Quaternionf rArmQuat = new Quaternionf(), lArmQuat = new Quaternionf();
+        Quaternionf rLegQuat = new Quaternionf(), lLegQuat = new Quaternionf();
 
-        for (Map.Entry<String, List<float[]>> entry : bones.entrySet()) {
+        for (Map.Entry<String, List<Keyframe>> entry : bones.entrySet()) {
             String boneName = entry.getKey();
             String target = BONE_TO_VANILLA.get(boneName);
             if (target == null) continue;
-            // Lower layer covers some bones (legs always; left arm during attacks)
             if (lowerActive && useLowerLayerForBone(boneName, runtime.lastState)) continue;
 
-            float[] rot = interpolate(entry.getValue(), timeSec);
-            float[] accumulator = switch (target) {
-                case "head" -> headRot;
-                case "body" -> bodyRot;
-                case "rightArm" -> rArmRot;
-                case "leftArm" -> lArmRot;
-                case "rightLeg" -> rLegRot;
-                case "leftLeg" -> lLegRot;
+            Quaternionf rot = interpolate(entry.getValue(), timeSec);
+            Quaternionf accumulator = switch (target) {
+                case "head" -> headQuat;
+                case "body" -> bodyQuat;
+                case "rightArm" -> rArmQuat;
+                case "leftArm" -> lArmQuat;
+                case "rightLeg" -> rLegQuat;
+                case "leftLeg" -> lLegQuat;
                 default -> null;
             };
             if (accumulator != null) {
-                accumulator[0] += rot[0];
-                accumulator[1] += rot[1];
-                accumulator[2] += rot[2];
+                accumulator.mul(rot);
             }
         }
 
-        // Lower layer: sample leg bones from lowerCurrentAnim
         if (lowerActive) {
             float lowerLength = ANIM_LENGTHS.getOrDefault(runtime.lowerCurrentAnim, 1.0f);
             boolean lowerLoop = ANIM_LOOPS.getOrDefault(runtime.lowerCurrentAnim, false);
@@ -537,78 +535,84 @@ public class CombatAnimationController {
             if (!lowerLoop && lowerTimeSec > lowerLength) lowerTimeSec = lowerLength;
             if (lowerLoop) lowerTimeSec = lowerTimeSec % lowerLength;
 
-            Map<String, List<float[]>> lowerBones = ANIM_DATA.get(runtime.lowerCurrentAnim);
-            for (Map.Entry<String, List<float[]>> entry : lowerBones.entrySet()) {
+            Map<String, List<Keyframe>> lowerBones = ANIM_DATA.get(runtime.lowerCurrentAnim);
+            for (Map.Entry<String, List<Keyframe>> entry : lowerBones.entrySet()) {
                 String boneName = entry.getKey();
                 String target = BONE_TO_VANILLA.get(boneName);
                 if (target == null) continue;
                 if (!useLowerLayerForBone(boneName, runtime.lastState)) continue;
 
-                float[] rot = interpolate(entry.getValue(), lowerTimeSec);
-                float[] accumulator = switch (target) {
-                    case "rightLeg" -> rLegRot;
-                    case "leftLeg" -> lLegRot;
-                    case "leftArm" -> lArmRot;
+                Quaternionf rot = interpolate(entry.getValue(), lowerTimeSec);
+                Quaternionf accumulator = switch (target) {
+                    case "rightLeg" -> rLegQuat;
+                    case "leftLeg" -> lLegQuat;
+                    case "leftArm" -> lArmQuat;
                     default -> null;
                 };
                 if (accumulator == null) continue;
-                accumulator[0] += rot[0];
-                accumulator[1] += rot[1];
-                accumulator[2] += rot[2];
+                accumulator.mul(rot);
             }
         }
 
-        // Apply merged rotations (additive on top of vanilla)
-        head.xRot += headRot[0] * DEG_TO_RAD;
-        head.yRot += headRot[1] * DEG_TO_RAD;
-        head.zRot += headRot[2] * DEG_TO_RAD;
-        body.xRot += bodyRot[0] * DEG_TO_RAD;
-        body.yRot += bodyRot[1] * DEG_TO_RAD;
-        body.zRot += bodyRot[2] * DEG_TO_RAD;
-        rightArm.xRot += rArmRot[0] * DEG_TO_RAD;
-        rightArm.yRot += rArmRot[1] * DEG_TO_RAD;
-        rightArm.zRot += rArmRot[2] * DEG_TO_RAD;
-        leftArm.xRot += lArmRot[0] * DEG_TO_RAD;
-        leftArm.yRot += lArmRot[1] * DEG_TO_RAD;
-        leftArm.zRot += lArmRot[2] * DEG_TO_RAD;
-        rightLeg.xRot += rLegRot[0] * DEG_TO_RAD;
-        rightLeg.yRot += rLegRot[1] * DEG_TO_RAD;
-        rightLeg.zRot += rLegRot[2] * DEG_TO_RAD;
-        leftLeg.xRot += lLegRot[0] * DEG_TO_RAD;
-        leftLeg.yRot += lLegRot[1] * DEG_TO_RAD;
-        leftLeg.zRot += lLegRot[2] * DEG_TO_RAD;
+        float[] euler = new float[3];
+        quaternionToEulerZYX(headQuat, euler);
+        head.xRot += euler[0]; head.yRot += euler[1]; head.zRot += euler[2];
+        quaternionToEulerZYX(bodyQuat, euler);
+        body.xRot += euler[0]; body.yRot += euler[1]; body.zRot += euler[2];
+        quaternionToEulerZYX(rArmQuat, euler);
+        rightArm.xRot += euler[0]; rightArm.yRot += euler[1]; rightArm.zRot += euler[2];
+        quaternionToEulerZYX(lArmQuat, euler);
+        leftArm.xRot += euler[0]; leftArm.yRot += euler[1]; leftArm.zRot += euler[2];
+        quaternionToEulerZYX(rLegQuat, euler);
+        rightLeg.xRot += euler[0]; rightLeg.yRot += euler[1]; rightLeg.zRot += euler[2];
+        quaternionToEulerZYX(lLegQuat, euler);
+        leftLeg.xRot += euler[0]; leftLeg.yRot += euler[1]; leftLeg.zRot += euler[2];
     }
 
-    private static float[] interpolate(List<float[]> keyframes, float time) {
-        if (keyframes.isEmpty()) return new float[]{0, 0, 0};
-        if (keyframes.size() == 1) return new float[]{keyframes.get(0)[1], keyframes.get(0)[2], keyframes.get(0)[3]};
-        if (time <= keyframes.get(0)[0]) {
-            return new float[]{keyframes.get(0)[1], keyframes.get(0)[2], keyframes.get(0)[3]};
-        }
-        float[] last = keyframes.get(keyframes.size() - 1);
-        if (time >= last[0]) {
-            return new float[]{last[1], last[2], last[3]};
-        }
+    private static Quaternionf interpolate(List<Keyframe> keyframes, float time) {
+        if (keyframes.isEmpty()) return new Quaternionf();
+        if (keyframes.size() == 1) return new Quaternionf(keyframes.get(0).rotation);
+        if (time <= keyframes.get(0).time) return new Quaternionf(keyframes.get(0).rotation);
+        Keyframe last = keyframes.get(keyframes.size() - 1);
+        if (time >= last.time) return new Quaternionf(last.rotation);
 
-        float[] before = keyframes.get(0);
-        float[] after = last;
-
+        Keyframe before = keyframes.get(0);
+        Keyframe after = last;
         for (int i = 0; i < keyframes.size() - 1; i++) {
-            if (keyframes.get(i)[0] <= time && keyframes.get(i + 1)[0] >= time) {
+            if (keyframes.get(i).time <= time && keyframes.get(i + 1).time >= time) {
                 before = keyframes.get(i);
                 after = keyframes.get(i + 1);
                 break;
             }
         }
 
-        float dt = after[0] - before[0];
-        float t = dt > 0 ? (time - before[0]) / dt : 0;
+        float dt = after.time - before.time;
+        float t = dt > 0 ? (time - before.time) / dt : 0;
+        return nlerp(before.rotation, after.rotation, t, new Quaternionf());
+    }
 
-        return new float[]{
-                before[1] + (after[1] - before[1]) * t,
-                before[2] + (after[2] - before[2]) * t,
-                before[3] + (after[3] - before[3]) * t
-        };
+    private static Quaternionf nlerp(Quaternionf a, Quaternionf b, float t, Quaternionf dest) {
+        float dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+        float sign = dot < 0 ? -1f : 1f;
+        float inv = 1f - t;
+        dest.x = inv * a.x + t * sign * b.x;
+        dest.y = inv * a.y + t * sign * b.y;
+        dest.z = inv * a.z + t * sign * b.z;
+        dest.w = inv * a.w + t * sign * b.w;
+        dest.normalize();
+        return dest;
+    }
+
+    private static void quaternionToEulerZYX(Quaternionf q, float[] out) {
+        float x = q.x, y = q.y, z = q.z, w = q.w;
+        float sinr = 2f * (w * x + y * z);
+        float cosr = 1f - 2f * (x * x + y * y);
+        out[0] = (float) Math.atan2(sinr, cosr);
+        float sinp = 2f * (w * y - z * x);
+        out[1] = Math.abs(sinp) >= 1f ? (float) Math.copySign(Math.PI / 2, sinp) : (float) Math.asin(sinp);
+        float siny = 2f * (w * z + x * y);
+        float cosy = 1f - 2f * (y * y + z * z);
+        out[2] = (float) Math.atan2(siny, cosy);
     }
 
     // --- Animation name resolution ---
