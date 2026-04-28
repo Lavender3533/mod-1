@@ -218,7 +218,6 @@ public class CombatAnimationController {
                                     keyframes.sort(Comparator.comparingDouble(k -> k.time));
                                     bones.put(boneName, keyframes);
                                 }
-                                }
                             }
                         }
                         ANIM_DATA.put(animName, bones);
