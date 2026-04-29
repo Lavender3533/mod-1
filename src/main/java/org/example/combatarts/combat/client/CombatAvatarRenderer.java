@@ -3,11 +3,15 @@ package org.example.combatarts.combat.client;
 import net.minecraft.client.entity.ClientAvatarEntity;
 import net.minecraft.client.entity.ClientAvatarState;
 import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
 import net.minecraft.client.renderer.entity.layers.PlayerItemInHandLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.client.renderer.state.CameraRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.PlayerModelPart;
@@ -15,6 +19,12 @@ import net.minecraft.world.entity.player.PlayerModelType;
 import com.mojang.blaze3d.vertex.PoseStack;
 import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
+import org.example.combatarts.combat.client.render.mesh.MeshManager;
+import org.example.combatarts.combat.client.render.mesh.Mesh;
+import org.example.combatarts.combat.client.render.mesh.MeshManager;
+import org.example.combatarts.combat.client.render.mesh.OpenMatrix4f;
+import org.example.combatarts.combat.client.render.mesh.Pose;
+import org.example.combatarts.combat.client.render.mesh.SkinnedMesh;
 
 public class CombatAvatarRenderer
         extends LivingEntityRenderer<AbstractClientPlayer, AvatarRenderState, CombatPlayerModel> {
@@ -30,6 +40,7 @@ public class CombatAvatarRenderer
         this.addLayer(new GuardWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new BackWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new CombatCapeLayer(this, context));
+        this.addLayer(new SkinnedMeshLayer(this));
     }
 
     @Override
@@ -57,6 +68,11 @@ public class CombatAvatarRenderer
         state.id = player.getId();
 
         extractCapeState(player, state, partialTick);
+
+        // Hide box model parts when skinned mesh is active
+        if (MeshManager.getMesh() != null) {
+            this.model.root.visible = false;
+        }
 
         boolean weaponDrawn = false;
         boolean useCustomGuardWeaponLayer = false;
@@ -120,6 +136,10 @@ public class CombatAvatarRenderer
         float walkDist = s.getInterpolatedWalkDistance(partialTick);
         state.capeFlap += Mth.sin(walkDist * 6.0F) * 32.0F * bob;
     }
+
+    // TODO: Skinned mesh rendering will be integrated here once the rendering pipeline
+    // is adapted from MultiBufferSource to SubmitNodeCollector (Forge 1.21.11 API change).
+    // For now, the vanilla box model + layers continue to render via super.submit().
 
     @Override
     protected void scale(AvatarRenderState state, PoseStack poseStack) {

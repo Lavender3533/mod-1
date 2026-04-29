@@ -1,0 +1,329 @@
+// Loads biped.json into Armature + SkinnedMesh for skinned player rendering
+package org.example.combatarts.combat.client.render.mesh;
+
+import com.google.common.collect.Maps;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.resources.Resource;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nullable;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
+
+public final class MeshManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger("CombatArts");
+    private static final Identifier BIPED_MODEL = Identifier.parse("combat_arts:models/entity/biped.json");
+
+    /** Blender exports with Z-up; Minecraft uses Y-up.  -90 deg around X fixes it. */
+    private static final OpenMatrix4f BLENDER_TO_MC = OpenMatrix4f.createRotatorDeg(-90.0F, Vec3f.X_AXIS);
+
+    private static Armature armature;
+    private static SkinnedMesh mesh;
+    private static Map<String, Map<String, TransformSheet>> loadedAnims = Maps.newHashMap();
+
+    private MeshManager() {}
+
+    // ---------------------------------------------------------------
+    // Public API
+    // ---------------------------------------------------------------
+
+    /** Called once during client setup to parse the model JSON. */
+    public static void init() {
+        try {
+            JsonObject root = loadJson(BIPED_MODEL);
+            if (root == null) {
+                LOGGER.error("[MeshManager] Failed to load biped.json - resource not found");
+                return;
+            }
+            armature = parseArmature(root.getAsJsonObject("armature"));
+            mesh = parseMesh(root.getAsJsonObject("vertices"));
+            LOGGER.info("[MeshManager] Loaded biped model: {} joints, {} mesh parts",
+                    armature.getJointNumber(), mesh.getAllParts().size());
+
+            loadEFAnimation("idle", "animations/biped/living/idle.json");
+            loadEFAnimation("hold_longsword", "animations/biped/living/hold_longsword.json");
+            loadEFAnimation("walk", "animations/biped/living/walk.json");
+            loadEFAnimation("run", "animations/biped/living/run.json");
+            loadEFAnimation("sneak", "animations/biped/living/sneak.json");
+            LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
+        } catch (Exception e) {
+            LOGGER.error("[MeshManager] Failed to load biped model", e);
+        }
+    }
+
+    @Nullable
+    public static Armature getArmature() {
+        return armature;
+    }
+
+    @Nullable
+    public static SkinnedMesh getMesh() {
+        return mesh;
+    }
+
+    public static Pose getPoseAtTime(String animName, float time) {
+        Map<String, TransformSheet> anim = loadedAnims.get(animName);
+        if (anim == null) return new Pose();
+
+        Pose pose = new Pose();
+        for (Map.Entry<String, TransformSheet> entry : anim.entrySet()) {
+            pose.putJointData(entry.getKey(), entry.getValue().getInterpolatedTransform(time));
+        }
+        return pose;
+    }
+
+    public static float getAnimLength(String animName) {
+        Map<String, TransformSheet> anim = loadedAnims.get(animName);
+        if (anim == null) return 1.0f;
+        float max = 0;
+        for (TransformSheet sheet : anim.values()) {
+            Keyframe[] kfs = sheet.getKeyframes();
+            if (kfs.length > 0) max = Math.max(max, kfs[kfs.length - 1].time());
+        }
+        return max > 0 ? max : 1.0f;
+    }
+
+    // ---------------------------------------------------------------
+    // JSON loading
+    // ---------------------------------------------------------------
+
+    @Nullable
+    private static JsonObject loadJson(Identifier id) {
+        try {
+            Resource resource = Minecraft.getInstance().getResourceManager()
+                    .getResource(id).orElse(null);
+            if (resource == null) return null;
+            try (InputStream is = resource.open();
+                 InputStreamReader reader = new InputStreamReader(is, StandardCharsets.UTF_8)) {
+                return JsonParser.parseReader(reader).getAsJsonObject();
+            }
+        } catch (Exception e) {
+            LOGGER.error("[MeshManager] Error reading {}", id, e);
+            return null;
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Armature parsing  (mirrors JsonAssetLoader.loadArmature)
+    // ---------------------------------------------------------------
+
+    private static Armature parseArmature(JsonObject armObj) {
+        // Build joint-name -> id map from the "joints" array
+        JsonArray jointNames = armObj.getAsJsonArray("joints");
+        Map<String, Integer> jointIdMap = Maps.newLinkedHashMap();
+        int nextId = 0;
+        for (int i = 0; i < jointNames.size(); i++) {
+            String name = jointNames.get(i).getAsString();
+            jointIdMap.put(name, nextId++);
+        }
+
+        // Parse hierarchy (always a single-element array whose element is the root)
+        JsonObject rootObj = armObj.getAsJsonArray("hierarchy").get(0).getAsJsonObject();
+        Map<String, Joint> jointMap = Maps.newHashMap();
+        Joint rootJoint = parseJoint(rootObj, jointIdMap, jointMap, true);
+
+        // Compute inverse bind matrices
+        rootJoint.initOriginTransform(new OpenMatrix4f());
+
+        Armature arm = new Armature("biped", jointMap.size(), rootJoint, jointMap);
+        return arm;
+    }
+
+    private static Joint parseJoint(JsonObject obj, Map<String, Integer> idMap,
+                                    Map<String, Joint> jointMap, boolean isRoot) {
+        String name = obj.get("name").getAsString();
+        if (!idMap.containsKey(name)) {
+            throw new IllegalStateException("Joint '" + name + "' not in armature joints list");
+        }
+
+        // Parse 16-element local-transform matrix (row-major in JSON)
+        JsonArray xformArr = obj.getAsJsonArray("transform");
+        float[] elements = new float[16];
+        for (int i = 0; i < 16; i++) {
+            elements[i] = xformArr.get(i).getAsFloat();
+        }
+        OpenMatrix4f localMatrix = OpenMatrix4f.load(null, elements);
+        // JSON stores row-major; EF convention is column-major, so transpose
+        localMatrix.transpose();
+
+        if (isRoot) {
+            localMatrix.mulFront(BLENDER_TO_MC);
+        }
+
+        Joint joint = new Joint(name, idMap.get(name), localMatrix);
+        jointMap.put(name, joint);
+
+        // Recurse children
+        if (obj.has("children")) {
+            for (JsonElement childElem : obj.getAsJsonArray("children")) {
+                joint.addSubJoints(parseJoint(childElem.getAsJsonObject(), idMap, jointMap, false));
+            }
+        }
+
+        return joint;
+    }
+
+    // ---------------------------------------------------------------
+    // SkinnedMesh parsing  (mirrors JsonAssetLoader.loadSkinnedMesh)
+    // ---------------------------------------------------------------
+
+    private static SkinnedMesh parseMesh(JsonObject vertObj) {
+        // --- positions (apply Blender->MC coord transform) ---
+        float[] positions = toFloatArray(vertObj.getAsJsonObject("positions").getAsJsonArray("array"));
+        for (int i = 0; i < positions.length / 3; i++) {
+            int k = i * 3;
+            Vec4f v = new Vec4f(positions[k], positions[k + 1], positions[k + 2], 1.0F);
+            OpenMatrix4f.transform(BLENDER_TO_MC, v, v);
+            positions[k]     = v.x;
+            positions[k + 1] = v.y;
+            positions[k + 2] = v.z;
+        }
+
+        // --- normals (same coord transform) ---
+        float[] normals = toFloatArray(vertObj.getAsJsonObject("normals").getAsJsonArray("array"));
+        for (int i = 0; i < normals.length / 3; i++) {
+            int k = i * 3;
+            Vec4f n = new Vec4f(normals[k], normals[k + 1], normals[k + 2], 1.0F);
+            OpenMatrix4f.transform(BLENDER_TO_MC, n, n);
+            normals[k]     = n.x;
+            normals[k + 1] = n.y;
+            normals[k + 2] = n.z;
+        }
+
+        // --- UVs ---
+        float[] uvs = toFloatArray(vertObj.getAsJsonObject("uvs").getAsJsonArray("array"));
+
+        // --- skinning weights data ---
+        float[] weights  = toFloatArray(vertObj.getAsJsonObject("weights").getAsJsonArray("array"));
+        float[] vcounts  = toFloatArray(vertObj.getAsJsonObject("vcounts").getAsJsonArray("array"));
+        float[] vindices = toFloatArray(vertObj.getAsJsonObject("vindices").getAsJsonArray("array"));
+
+        Map<String, float[]> arrayMap = Maps.newHashMap();
+        arrayMap.put("positions", positions);
+        arrayMap.put("normals",   normals);
+        arrayMap.put("uvs",       uvs);
+        arrayMap.put("weights",   weights);
+        arrayMap.put("vcounts",   vcounts);
+        arrayMap.put("vindices",  vindices);
+
+        // --- mesh parts ---
+        Map<MeshPartDefinition, List<VertexBuilder>> meshMap = Maps.newLinkedHashMap();
+        JsonObject partsObj = vertObj.getAsJsonObject("parts");
+        if (partsObj != null) {
+            for (Map.Entry<String, JsonElement> entry : partsObj.entrySet()) {
+                String partName = entry.getKey();
+                JsonObject partJson = entry.getValue().getAsJsonObject();
+                int[] indices = toIntArray(partJson.getAsJsonArray("array"));
+                List<VertexBuilder> verts = VertexBuilder.create(indices);
+                meshMap.put(simplePart(partName), verts);
+            }
+        }
+
+        SkinnedMesh result = new SkinnedMesh(arrayMap, meshMap, null, null);
+        result.initialize();
+        return result;
+    }
+
+    // ---------------------------------------------------------------
+    // Simple MeshPartDefinition implementation
+    // ---------------------------------------------------------------
+
+    private static MeshPartDefinition simplePart(String name) {
+        return new MeshPartDefinition() {
+            @Override public String partName() { return name; }
+            @Override public Mesh.RenderProperties renderProperties() { return null; }
+            @Override public Supplier<OpenMatrix4f> getModelPartAnimationProvider() { return null; }
+        };
+    }
+
+    // ---------------------------------------------------------------
+    // JSON array -> primitive array helpers
+    // ---------------------------------------------------------------
+
+    private static float[] toFloatArray(JsonArray arr) {
+        float[] result = new float[arr.size()];
+        for (int i = 0; i < arr.size(); i++) {
+            result[i] = arr.get(i).getAsFloat();
+        }
+        return result;
+    }
+
+    private static int[] toIntArray(JsonArray arr) {
+        int[] result = new int[arr.size()];
+        for (int i = 0; i < arr.size(); i++) {
+            result[i] = arr.get(i).getAsInt();
+        }
+        return result;
+    }
+
+    // ---------------------------------------------------------------
+    // EF animation loading
+    // ---------------------------------------------------------------
+
+    private static final Identifier EF_ANIM_BASE = Identifier.parse("combat_arts:models/");
+
+    private static void loadEFAnimation(String name, String path) {
+        try {
+            Identifier id = Identifier.parse("combat_arts:models/" + path);
+            JsonObject root = loadJson(id);
+            if (root == null) {
+                LOGGER.warn("[MeshManager] Animation not found: {}", path);
+                return;
+            }
+            JsonArray animArr = root.getAsJsonArray("animation");
+            Map<String, TransformSheet> sheets = Maps.newHashMap();
+
+            for (int i = 0; i < animArr.size(); i++) {
+                JsonObject entry = animArr.get(i).getAsJsonObject();
+                String jointName = entry.get("name").getAsString();
+                JsonArray times = entry.getAsJsonArray("time");
+                JsonArray transforms = entry.getAsJsonArray("transform");
+
+                Joint joint = armature != null ? armature.searchJointByName(jointName) : null;
+                if (joint == null) continue;
+
+                List<Keyframe> keyframes = new java.util.ArrayList<>();
+                for (int k = 0; k < times.size(); k++) {
+                    float time = times.get(k).getAsFloat();
+                    // Each transform entry is a nested 16-element array
+                    JsonArray matArr = transforms.get(k).getAsJsonArray();
+                    float[] m = new float[16];
+                    for (int j = 0; j < 16; j++) {
+                        m[j] = matArr.get(j).getAsFloat();
+                    }
+                    OpenMatrix4f mat = OpenMatrix4f.load(null, m);
+                    mat.transpose(); // row-major → column-major
+
+                    // Apply Blender→MC transform to root bone
+                    if (jointName.equals("Root")) {
+                        mat.mulFront(BLENDER_TO_MC);
+                    }
+
+                    // Pre-multiply by inverse local transform (delta from bind pose)
+                    OpenMatrix4f invLocal = new OpenMatrix4f(joint.getLocalTransform());
+                    invLocal.invert();
+                    mat = OpenMatrix4f.mul(invLocal, mat, null);
+
+                    JointTransform jt = JointTransform.fromMatrix(mat);
+                    keyframes.add(new Keyframe(time, jt));
+                }
+                sheets.put(jointName, new TransformSheet(keyframes));
+            }
+            loadedAnims.put(name, sheets);
+        } catch (Exception e) {
+            LOGGER.error("[MeshManager] Failed to load animation: {}", name, e);
+        }
+    }
+}

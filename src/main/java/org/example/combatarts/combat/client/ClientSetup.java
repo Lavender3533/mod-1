@@ -8,6 +8,7 @@ import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
+import org.example.combatarts.combat.client.render.mesh.MeshManager;
 import org.example.combatarts.combat.input.CombatInputHandler;
 import org.example.combatarts.combat.input.CombatKeyBindings;
 
@@ -28,6 +29,7 @@ public final class ClientSetup {
         // 把渲染器换成我们的
         EntityRenderersEvent.AddLayers.BUS.addListener(event -> {
             CombatRendererManager.init(event.getContext());
+            MeshManager.init();  // Load skinned mesh model (biped.json)
         });
 
         // HUD overlay
