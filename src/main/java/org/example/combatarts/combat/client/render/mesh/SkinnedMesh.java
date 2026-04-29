@@ -190,7 +190,9 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 					totalNormals[i] = totalPoses[i].removeTranslation();
 				}
 
-				for (VertexBuilder vi : part.getVertices()) {
+				List<VertexBuilder> verts = part.getVertices();
+				for (int idx = 0; idx < verts.size(); idx++) {
+					VertexBuilder vi = verts.get(idx);
 					this.getVertexPosition(vi.position, POSITION, totalPoses);
 					this.getVertexNormal(vi.position, vi.normal, NORMAL, totalNormals);
 
@@ -198,6 +200,11 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 					NORMAL.mul(normal);
 
 					drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
+
+					// Convert triangle to degenerate quad: duplicate every 3rd vertex
+					if (idx % 3 == 2) {
+						drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
+					}
 				}
 			}
 		}
@@ -252,12 +259,18 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 			Matrix4f pose = poseStack.last().pose();
 			Matrix3f normal = poseStack.last().normal();
 
-			for (VertexBuilder vi : this.getVertices()) {
+			List<VertexBuilder> verts = this.getVertices();
+			for (int idx = 0; idx < verts.size(); idx++) {
+				VertexBuilder vi = verts.get(idx);
 				getVertexPosition(vi.position, POSITION);
 				getVertexNormal(vi.normal, NORMAL);
 				POSITION.mul(pose);
 				NORMAL.mul(normal);
 				drawingFunction.draw(bufferBuilder, POSITION.x(), POSITION.y(), POSITION.z(), NORMAL.x(), NORMAL.y(), NORMAL.z(), packedLight, color.x, color.y, color.z, color.w, uvs[vi.uv * 2], uvs[vi.uv * 2 + 1], overlay);
+
+				if (idx % 3 == 2) {
+					drawingFunction.draw(bufferBuilder, POSITION.x(), POSITION.y(), POSITION.z(), NORMAL.x(), NORMAL.y(), NORMAL.z(), packedLight, color.x, color.y, color.z, color.w, uvs[vi.uv * 2], uvs[vi.uv * 2 + 1], overlay);
+				}
 			}
 		}
 	}
