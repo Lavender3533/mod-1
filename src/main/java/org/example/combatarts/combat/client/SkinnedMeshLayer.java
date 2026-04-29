@@ -8,15 +8,22 @@ import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
 import net.minecraft.client.renderer.entity.layers.RenderLayer;
 import net.minecraft.client.renderer.entity.state.AvatarRenderState;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
 import org.example.combatarts.combat.client.render.mesh.*;
+import org.joml.Quaternionf;
 
 public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
+
+    private static final float TRANSITION_DURATION = 0.15f;
+
+    private String prevAnimName = "idle";
+    private Pose prevPose = new Pose();
+    private float transitionTimer = 0f;
+    private long lastFrameTime = 0;
 
     public SkinnedMeshLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent) {
         super(parent);
@@ -33,9 +40,35 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         String animName = resolveAnimation(player);
 
         float animTime = computeAnimTime(player, animName, state);
+        Pose targetPose = MeshManager.getPoseAtTime(animName, animTime);
 
-        Pose pose = MeshManager.getPoseAtTime(animName, animTime);
-        armature.setPose(pose);
+        // Transition blending
+        long now = System.nanoTime();
+        float dt = lastFrameTime == 0 ? 0.016f : (now - lastFrameTime) / 1_000_000_000f;
+        lastFrameTime = now;
+        dt = Math.min(dt, 0.1f);
+
+        if (!animName.equals(prevAnimName)) {
+            prevAnimName = animName;
+            transitionTimer = TRANSITION_DURATION;
+        }
+
+        Pose finalPose;
+        if (transitionTimer > 0) {
+            transitionTimer -= dt;
+            float alpha = 1.0f - Math.max(0, transitionTimer) / TRANSITION_DURATION;
+            alpha = alpha * alpha * (3 - 2 * alpha); // smoothstep
+            finalPose = Pose.interpolatePose(prevPose, targetPose, alpha);
+        } else {
+            finalPose = targetPose;
+        }
+
+        prevPose = finalPose;
+
+        // TODO: Head rotation tracking — needs to match EF's approach
+        // (applied in ClientAnimator, not renderer)
+
+        armature.setPose(finalPose);
 
         Identifier skinTex = state.skin.body().texturePath();
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
@@ -61,14 +94,12 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
         if (animName.contains("walk") || animName.contains("run") || animName.equals("sneak")) {
-            // Sync to player's walk animation position (like vanilla MC)
             float walkPos = state.walkAnimationPos;
             float speed = animName.contains("run") ? 0.05f : 0.08f;
             if (animName.equals("sneak")) speed = 0.06f;
             return (walkPos * speed) % animLength;
         }
 
-        // Idle/hold animations: use game time
         float gameTime = (float)(Minecraft.getInstance().level != null ?
                 Minecraft.getInstance().level.getGameTime() : 0) + partialTick;
         return (gameTime * 0.05f) % animLength;
