@@ -55,7 +55,9 @@ public final class MeshManager {
             loadEFAnimation("idle", "animations/biped/living/idle.json");
             loadEFAnimation("hold_longsword", "animations/biped/living/hold_longsword.json");
             loadEFAnimation("walk", "animations/biped/living/walk.json");
+            loadEFAnimation("walk_longsword", "animations/biped/living/walk_longsword.json");
             loadEFAnimation("run", "animations/biped/living/run.json");
+            loadEFAnimation("run_longsword", "animations/biped/living/run_longsword.json");
             loadEFAnimation("sneak", "animations/biped/living/sneak.json");
             LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
         } catch (Exception e) {
@@ -314,9 +316,10 @@ public final class MeshManager {
                     // Pre-multiply by inverse local transform (delta from bind pose)
                     OpenMatrix4f invLocal = new OpenMatrix4f(joint.getLocalTransform());
                     invLocal.invert();
-                    mat = OpenMatrix4f.mul(invLocal, mat, null);
+                    mat.mulFront(invLocal);
 
                     JointTransform jt = JointTransform.fromMatrix(mat);
+                    jt.rotation().normalize();
                     keyframes.add(new Keyframe(time, jt));
                 }
                 sheets.put(jointName, new TransformSheet(keyframes));
