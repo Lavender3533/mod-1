@@ -21,7 +21,8 @@ public final class BlockPoseTweaker {
             "rightUpperArm", "rightLowerArm", "rightHand",
             "leftUpperArm",  "leftLowerArm",  "leftHand",
             "sword_rot",     "sword_pos",     "sword_blade_roll",
-            "back_rot",      "back_pos"
+            "back_rot",      "back_pos",
+            "held_rot",      "held_pos"
     };
     private static final String[] AXIS_NAMES = {"X", "Y", "Z"};
 
@@ -30,6 +31,8 @@ public final class BlockPoseTweaker {
     private static final int SWORD_BLADE_INDEX = 8;
     private static final int BACK_ROT_INDEX = 9;
     private static final int BACK_POS_INDEX = 10;
+    private static final int HELD_ROT_INDEX = 11;
+    private static final int HELD_POS_INDEX = 12;
 
     private static final float ROT_STEP_DEG = 5.0f;
     private static final float POS_STEP_UNIT = 0.05f;
@@ -80,6 +83,16 @@ public final class BlockPoseTweaker {
     /** BackWeaponLayer 调用：背挂武器的额外平移（unit）。 */
     public static float getBackPos(int axis) {
         return DELTAS[BACK_POS_INDEX][axis];
+    }
+
+    /** CombatItemInHandLayer 调用：手持武器的额外旋转（度）。 */
+    public static float getHeldRot(int axis) {
+        return DELTAS[HELD_ROT_INDEX][axis];
+    }
+
+    /** CombatItemInHandLayer 调用：手持武器的额外平移（unit）。 */
+    public static float getHeldPos(int axis) {
+        return DELTAS[HELD_POS_INDEX][axis];
     }
 
     public static void cycleBone() {
@@ -134,11 +147,11 @@ public final class BlockPoseTweaker {
     }
 
     private static float stepFor(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX) ? POS_STEP_UNIT : ROT_STEP_DEG;
+        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? POS_STEP_UNIT : ROT_STEP_DEG;
     }
 
     private static String unitFor(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX) ? " (unit)" : "°";
+        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? " (unit)" : "°";
     }
 
     private static void chatStatus() {
@@ -155,11 +168,11 @@ public final class BlockPoseTweaker {
     }
 
     private static String stepStr(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX) ? "0.05" : "5";
+        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? "0.05" : "5";
     }
 
     private static String fmt(float v, int boneIdx) {
-        if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX) return String.format("%.2f", v);
+        if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return String.format("%.2f", v);
         if (v == (int) v) return Integer.toString((int) v);
         return String.format("%.1f", v);
     }

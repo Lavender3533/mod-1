@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.WeaponType;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
+import org.example.combatarts.combat.client.render.mesh.*;
 import org.joml.Quaternionf;
 
 public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
@@ -54,15 +55,28 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
             poseStack.pushPose();
 
-            CombatPlayerModel model = this.getParentModel();
-            model.root.translateAndRotate(poseStack);
-            model.hip.translateAndRotate(poseStack);
-            model.waist.translateAndRotate(poseStack);
-            model.chest.translateAndRotate(poseStack);
-            model.rightUpperArm.translateAndRotate(poseStack);
-            model.rightLowerArm.translateAndRotate(poseStack);
-            model.rightHand.translateAndRotate(poseStack);
-            model.weaponMount.translateAndRotate(poseStack);
+            Armature armature = MeshManager.getArmature();
+            if (armature != null && MeshManager.getMesh() != null && armature.hasJoint("Tool_R")) {
+                Joint toolR = armature.searchJointByName("Tool_R");
+                OpenMatrix4f jointMatrix = armature.getPoseMatrices()[toolR.getId()];
+                poseStack.scale(-1.0F, -1.0F, 1.0F);
+                poseStack.translate(0.0, -1.501, 0.0);
+                MathUtils.mulStack(poseStack, jointMatrix);
+                OpenMatrix4f correction = new OpenMatrix4f()
+                        .translate(0F, 0F, -0.13F)
+                        .rotateDeg(-90.0F, Vec3f.X_AXIS);
+                MathUtils.mulStack(poseStack, correction);
+            } else {
+                CombatPlayerModel model = this.getParentModel();
+                model.root.translateAndRotate(poseStack);
+                model.hip.translateAndRotate(poseStack);
+                model.waist.translateAndRotate(poseStack);
+                model.chest.translateAndRotate(poseStack);
+                model.rightUpperArm.translateAndRotate(poseStack);
+                model.rightLowerArm.translateAndRotate(poseStack);
+                model.rightHand.translateAndRotate(poseStack);
+                model.weaponMount.translateAndRotate(poseStack);
+            }
 
             // THIRD_PERSON_RIGHT_HAND already carries the held-item display transform.
             // Below is the BLOCK-specific guard correction baseline (调到满意后烘焙的值)。

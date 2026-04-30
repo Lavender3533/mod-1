@@ -17,7 +17,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.PlayerModelPart;
 import net.minecraft.world.entity.player.PlayerModelType;
 import com.mojang.blaze3d.vertex.PoseStack;
-import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
 import org.example.combatarts.combat.client.render.mesh.MeshManager;
 import org.example.combatarts.combat.client.render.mesh.Mesh;
@@ -36,11 +35,12 @@ public class CombatAvatarRenderer
         super(context, new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION), false), 0.5F);
         this.wideModel = this.getModel();
         this.slimModel = new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION_SLIM), true);
+        this.addLayer(new SkinnedMeshLayer(this));
         this.addLayer(new PlayerItemInHandLayer<>(this));
+        this.addLayer(new CombatItemInHandLayer(this, this.itemModelResolver));
         this.addLayer(new GuardWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new BackWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new CombatCapeLayer(this, context));
-        this.addLayer(new SkinnedMeshLayer(this));
     }
 
     @Override
@@ -74,37 +74,18 @@ public class CombatAvatarRenderer
             this.model.root.visible = false;
         }
 
-        boolean weaponDrawn = false;
-        boolean useCustomGuardWeaponLayer = false;
         var combatOpt = CombatCapabilityEvents.getCombat(player);
         if (combatOpt.isPresent()) {
-            final boolean[] weaponDrawnRef = {false};
-            final boolean[] customGuardRef = {false};
             combatOpt.ifPresent(cap -> {
                 CombatAnimationController.updateAnimation(player, cap);
-                weaponDrawnRef[0] = CombatCapabilityEvents.shouldRenderWeaponInHand(cap);
-                CombatState combatState = cap.getState();
-                // GuardWeaponLayer 对剑/矛都做自定义格挡渲染, 这里相应地把 vanilla item layer 抑制掉
-                customGuardRef[0] = weaponDrawnRef[0]
-                        && (cap.getWeaponType() == org.example.combatarts.combat.WeaponType.SWORD
-                            || cap.getWeaponType() == org.example.combatarts.combat.WeaponType.SPEAR)
-                        && (combatState == CombatState.BLOCK || combatState == CombatState.PARRY);
             });
-            weaponDrawn = weaponDrawnRef[0];
-            useCustomGuardWeaponLayer = customGuardRef[0];
         }
 
-        // 未拔刀时抑制 PlayerItemInHandLayer 的手持渲染（武器改由 BackWeaponLayer 背上渲染）
-        if (!weaponDrawn) {
-            // BackWeaponLayer 自己通过 capability 拿到主手物品，不依赖这里
-            // 所以我们可以把主手的 itemState 清空，vanilla 的 PlayerItemInHandLayer 就会跳过
-            // 但 rightHandItemState 被子层读取，清空会影响 BackWeaponLayer
-            // 改为只清空 mainArm 侧 — BackWeaponLayer 直接从 player 读取
-            clearHandItem(state);
-        } else if (useCustomGuardWeaponLayer) {
-            // BLOCK/PARRY 改用真实 rightHand 挂点的自定义图层，避免 vanilla 仍按上臂挂点渲染。
-            clearHandItem(state);
-        }
+        // Always suppress vanilla PlayerItemInHandLayer — custom layers handle all cases:
+        // - CombatItemInHandLayer: drawn weapon (idle/walk/run/attack)
+        // - GuardWeaponLayer: drawn weapon (BLOCK/PARRY)
+        // - BackWeaponLayer: sheathed weapon (on back)
+        clearHandItem(state);
     }
 
     private static void clearHandItem(AvatarRenderState state) {

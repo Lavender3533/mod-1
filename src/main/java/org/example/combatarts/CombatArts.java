@@ -31,7 +31,7 @@ public class CombatArts {
     // Create a Deferred Register to hold CreativeModeTabs which will all be registered under the "combat_arts" namespace
     public static final DeferredRegister<CreativeModeTab> CREATIVE_MODE_TABS = DeferredRegister.create(Registries.CREATIVE_MODE_TAB, MODID);
 
-    // Combat Arts 专属创意栏 — 图标用我们自己的钻石剑, 列出全部 sword + spear.
+    // Combat Arts
     public static final RegistryObject<CreativeModeTab> COMBAT_ARTS_TAB = CREATIVE_MODE_TABS.register(
             "combat_arts",
             () -> CreativeModeTab.builder()

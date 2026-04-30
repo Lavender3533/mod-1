@@ -17,6 +17,7 @@ import net.minecraft.world.item.ItemStack;
 import org.example.combatarts.combat.WeaponDetector;
 import org.example.combatarts.combat.WeaponType;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
+import org.example.combatarts.combat.client.render.mesh.*;
 
 public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
@@ -52,12 +53,29 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
 
         poseStack.pushPose();
 
-        CombatPlayerModel model = this.getParentModel();
-        model.root.translateAndRotate(poseStack);
-        model.hip.translateAndRotate(poseStack);
-        model.waist.translateAndRotate(poseStack);
-        model.chest.translateAndRotate(poseStack);
-        model.sheathBack.translateAndRotate(poseStack);
+        Armature armature = MeshManager.getArmature();
+        if (armature != null && MeshManager.getMesh() != null && armature.hasJoint("Chest")) {
+            Joint chest = armature.searchJointByName("Chest");
+            OpenMatrix4f jointMatrix = armature.getPoseMatrices()[chest.getId()];
+            poseStack.scale(-1.0F, -1.0F, 1.0F);
+            poseStack.translate(0.0, -1.501, 0.0);
+            MathUtils.mulStack(poseStack, jointMatrix);
+            // EF Chest correction matrix for mainhand item on back
+            OpenMatrix4f chestCorrection = new OpenMatrix4f(
+                    3.3484866E-8F, -2.809714E-8F, -0.99999994F, 0.0F,
+                    -0.6427876F, -0.7660444F, 0.0F, 0.0F,
+                    -0.76604444F, 0.64278764F, -4.3711385E-8F, 0.0F,
+                    0.25711504F, 0.30641776F, 0.14999999F, 1.0F
+            );
+            MathUtils.mulStack(poseStack, chestCorrection);
+        } else {
+            CombatPlayerModel model = this.getParentModel();
+            model.root.translateAndRotate(poseStack);
+            model.hip.translateAndRotate(poseStack);
+            model.waist.translateAndRotate(poseStack);
+            model.chest.translateAndRotate(poseStack);
+            model.sheathBack.translateAndRotate(poseStack);
+        }
 
         // Live tweaker — 在 baseline 变换之前叠加，X/Y/Z 对齐身体坐标
         //   X: 沿身体横向（左右），轴翻转可让武器从背左切到背右
