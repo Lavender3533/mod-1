@@ -63,10 +63,25 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             finalPose = targetPose;
         }
 
-        prevPose = finalPose;
+        // Save pose for next frame transition BEFORE applying head rotation
+        prevPose = new Pose();
+        finalPose.forEachEnabledTransforms((name, jt) ->
+            prevPose.putJointData(name, jt.copy()));
 
-        // TODO: Head rotation tracking — needs to match EF's approach
-        // (applied in ClientAnimator, not renderer)
+        // Head rotation tracking — use frontResult like EF
+        if (player != null && finalPose.hasTransform("Head")) {
+            float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+            float headYawRel = net.minecraft.util.Mth.rotLerp(partialTick,
+                    net.minecraft.util.Mth.wrapDegrees(player.yBodyRotO - player.yHeadRotO),
+                    net.minecraft.util.Mth.wrapDegrees(player.yBodyRot - player.yHeadRot));
+            float headPitch = -net.minecraft.util.Mth.rotLerp(partialTick, player.xRotO, player.getXRot());
+
+            OpenMatrix4f headRotMatrix = OpenMatrix4f.createRotatorDeg(headYawRel, Vec3f.Y_AXIS)
+                    .rotateDeg(headPitch, Vec3f.X_AXIS);
+
+            finalPose.orElseEmpty("Head").frontResult(
+                    JointTransform.fromMatrixWithoutScale(headRotMatrix), OpenMatrix4f::mul);
+        }
 
         armature.setPose(finalPose);
 
