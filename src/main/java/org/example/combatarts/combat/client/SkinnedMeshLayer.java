@@ -12,18 +12,24 @@ import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
+import org.example.combatarts.combat.capability.ICombatCapability;
 import org.example.combatarts.combat.client.render.mesh.*;
 import org.joml.Quaternionf;
 
 public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
     private static final float TRANSITION_DURATION = 0.15f;
+    private static final float COMBAT_TRANSITION_DURATION = 0.12f;
 
     private String prevAnimName = "idle";
     private Pose prevPose = new Pose();
     private float transitionTimer = 0f;
+    private float currentTransitionDuration = TRANSITION_DURATION;
     private long lastFrameTime = 0;
+
+    private CombatState lastCombatState = CombatState.IDLE;
 
     public SkinnedMeshLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent) {
         super(parent);
@@ -37,10 +43,51 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         if (armature == null || mesh == null) return;
 
         Player player = resolvePlayer(state);
+
+        // Use EF animations for all states
         String animName = resolveAnimation(player);
 
-        float animTime = computeAnimTime(player, animName, state);
-        Pose targetPose = MeshManager.getPoseAtTime(animName, animTime);
+        // Freeze pose for EF joint tweaking
+        boolean tweakMode = BlockPoseTweaker.isEfTweakActive();
+
+        // Upper body joints — combat animation controls these during draw/sheath
+        java.util.Set<String> upperBodyJoints = java.util.Set.of(
+                "Shoulder_R", "Arm_R", "Hand_R", "Tool_R", "Elbow_R");
+
+        boolean isCombatAnim = "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+
+        Pose targetPose;
+        if (tweakMode) {
+            targetPose = MeshManager.getPoseAtTime("idle", 0);
+            applyTweakToJoint(targetPose, armature, "Arm_R",
+                    BlockPoseTweaker.getEfShoulder(0),
+                    BlockPoseTweaker.getEfShoulder(1),
+                    BlockPoseTweaker.getEfShoulder(2));
+            applyTweakToJoint(targetPose, armature, "Hand_R",
+                    BlockPoseTweaker.getEfArm(0),
+                    BlockPoseTweaker.getEfArm(1),
+                    BlockPoseTweaker.getEfArm(2));
+        } else if (isCombatAnim) {
+            // Upper body: combat animation, Lower body: locomotion
+            float combatTime = computeAnimTime(player, animName, state);
+            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+
+            String locoAnim = resolveLocomotion(player);
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+            targetPose = new Pose();
+            // Merge: upper body from combat, everything else from locomotion
+            locoPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            combatPose.forEachEnabledTransforms((name, jt) -> {
+                if (upperBodyJoints.contains(name))
+                    targetPose.putJointData(name, jt.copy());
+            });
+        } else {
+            float animTime = computeAnimTime(player, animName, state);
+            targetPose = MeshManager.getPoseAtTime(animName, animTime);
+        }
 
         // Transition blending
         long now = System.nanoTime();
@@ -49,26 +96,27 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         dt = Math.min(dt, 0.1f);
 
         if (!animName.equals(prevAnimName)) {
+            currentTransitionDuration = isTimedAnimation(animName) || isTimedAnimation(prevAnimName)
+                    ? COMBAT_TRANSITION_DURATION : TRANSITION_DURATION;
             prevAnimName = animName;
-            transitionTimer = TRANSITION_DURATION;
+            transitionTimer = currentTransitionDuration;
         }
 
         Pose finalPose;
         if (transitionTimer > 0) {
             transitionTimer -= dt;
-            float alpha = 1.0f - Math.max(0, transitionTimer) / TRANSITION_DURATION;
-            alpha = alpha * alpha * (3 - 2 * alpha); // smoothstep
+            float alpha = 1.0f - Math.max(0, transitionTimer) / currentTransitionDuration;
+            alpha = alpha * alpha * (3 - 2 * alpha);
             finalPose = Pose.interpolatePose(prevPose, targetPose, alpha);
         } else {
             finalPose = targetPose;
         }
 
-        // Save pose for next frame transition BEFORE applying head rotation
         prevPose = new Pose();
         finalPose.forEachEnabledTransforms((name, jt) ->
             prevPose.putJointData(name, jt.copy()));
 
-        // Head rotation tracking — use frontResult like EF
+        // Head rotation tracking
         if (player != null && finalPose.hasTransform("Head")) {
             float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
             float headYawRel = net.minecraft.util.Mth.rotLerp(partialTick,
@@ -108,6 +156,14 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
+        // Timed combat animations — sync to state timer
+        if (isTimedAnimation(animName) && player != null) {
+            float elapsed = getTimedAnimElapsed(player, partialTick);
+            if (elapsed >= 0) {
+                return Math.min(elapsed, animLength);
+            }
+        }
+
         if (animName.contains("walk") || animName.contains("run") || animName.equals("sneak")) {
             float walkPos = state.walkAnimationPos;
             float speed = animName.contains("run") ? 0.05f : 0.08f;
@@ -123,8 +179,25 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     private String resolveAnimation(Player player) {
         if (player == null) return "idle";
 
-        boolean weaponDrawn = CombatCapabilityEvents.getCombat(player)
-                .map(cap -> cap.isWeaponDrawn()).orElse(false);
+        var combatOpt = CombatCapabilityEvents.getCombat(player);
+        final String[] result = {null};
+
+        combatOpt.ifPresent(cap -> {
+            CombatState state = cap.getState();
+            lastCombatState = state;
+
+            switch (state) {
+                case DRAW_WEAPON -> result[0] = "draw_weapon";
+                case SHEATH_WEAPON -> result[0] = "sheath_weapon";
+                default -> {}
+            }
+        });
+
+        if (result[0] != null && MeshManager.getAnimLength(result[0]) > 0) {
+            return result[0];
+        }
+
+        boolean weaponDrawn = combatOpt.map(cap -> cap.isWeaponDrawn()).orElse(false);
 
         if (player.isCrouching()) {
             return "sneak";
@@ -140,6 +213,75 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         }
 
         return weaponDrawn ? "hold_longsword" : "idle";
+    }
+
+    private float getTimedAnimElapsed(Player player, float partialTick) {
+        var combatOpt = CombatCapabilityEvents.getCombat(player);
+        final float[] elapsed = {-1f};
+        combatOpt.ifPresent(cap -> {
+            CombatState state = cap.getState();
+            if (state.isTimed()) {
+                int durationTicks = state.getDurationTicks();
+                int remaining = cap.getStateTimer();
+                elapsed[0] = (durationTicks - remaining + partialTick) / 20.0f;
+            }
+        });
+        return elapsed[0];
+    }
+
+    private String resolveLocomotion(Player player) {
+        if (player == null) return "idle";
+        if (player.isCrouching()) return "sneak";
+        if (player.isSprinting()) return "run";
+        double dx = player.getX() - player.xOld;
+        double dz = player.getZ() - player.zOld;
+        if (dx * dx + dz * dz > 0.0004) return "walk";
+        return "idle";
+    }
+
+    private static boolean isTimedAnimation(String animName) {
+        return "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+    }
+
+    private static boolean hasTweakValues() {
+        for (int i = 0; i < 3; i++) {
+            if (BlockPoseTweaker.getHeldRot(i) != 0) return true;
+            if (BlockPoseTweaker.getHeldPos(i) != 0) return true;
+        }
+        return false;
+    }
+
+    private static void applyTweakToJoint(Pose pose, Armature armature, String jointName,
+                                           float rxDeg, float ryDeg, float rzDeg) {
+        if (!armature.hasJoint(jointName)) return;
+        if (rxDeg == 0 && ryDeg == 0 && rzDeg == 0) return;
+
+        Joint joint = armature.searchJointByName(jointName);
+        JointTransform existing = pose.orElseEmpty(jointName);
+
+        // Recover absolute matrix: absolute = local * delta
+        OpenMatrix4f local = joint.getLocalTransform();
+        OpenMatrix4f delta = existing.toMatrix();
+        OpenMatrix4f absolute = OpenMatrix4f.mul(local, delta, null);
+
+        // Apply tweaker rotation to absolute 3x3 (same as Python apply_rot)
+        OpenMatrix4f rot = OpenMatrix4f.createRotatorDeg(rxDeg, Vec3f.X_AXIS)
+                .rotateDeg(ryDeg, Vec3f.Y_AXIS)
+                .rotateDeg(rzDeg, Vec3f.Z_AXIS);
+        OpenMatrix4f newAbsolute = OpenMatrix4f.mul(rot, absolute, null);
+        // Keep original translation
+        newAbsolute.m30 = absolute.m30;
+        newAbsolute.m31 = absolute.m31;
+        newAbsolute.m32 = absolute.m32;
+
+        // Compute new delta: invLocal * newAbsolute
+        OpenMatrix4f invLocal = new OpenMatrix4f(local);
+        invLocal.invert();
+        OpenMatrix4f newDelta = OpenMatrix4f.mul(invLocal, newAbsolute, null);
+
+        JointTransform newJt = JointTransform.fromMatrix(newDelta);
+        newJt.rotation().normalize();
+        pose.putJointData(jointName, newJt);
     }
 
     private static Player resolvePlayer(AvatarRenderState state) {

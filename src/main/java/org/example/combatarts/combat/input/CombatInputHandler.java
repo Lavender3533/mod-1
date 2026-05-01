@@ -195,14 +195,13 @@ public class CombatInputHandler {
             );
         }
 
-        // BLOCK 姿势调试工具 — 隐藏中. 字段/处理逻辑保留, 想再调姿势时把这 6 行
-        // 和 CombatKeyBindings.registerKeys 里 6 行 event.register 一起取消注释即可。
-        // while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
-        // while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
-        // while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
-        // while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
-        // while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
-        // while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
+        // 姿势调试工具
+        while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
+        while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
+        while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
+        while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
+        while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
+        while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
     }
 
     private static void requestWithPrediction(ICombatCapability cap, CombatState target) {

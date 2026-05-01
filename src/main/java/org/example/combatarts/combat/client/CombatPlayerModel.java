@@ -24,7 +24,7 @@ import org.example.combatarts.combat.capability.CombatCapabilityEvents;
 import java.util.HashMap;
 import java.util.Map;
 
-public class CombatPlayerModel extends EntityModel<AvatarRenderState>
+public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
         implements ArmedModel<AvatarRenderState>, HeadedModel {
 
     public static final ModelLayerLocation LAYER_LOCATION =

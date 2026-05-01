@@ -80,13 +80,11 @@ public class CombatKeyBindings {
         event.register(INSPECT);
         event.register(HEAVY_ATTACK);
         event.register(RELOAD_ANIMATIONS);
-        // Pose tweakers 隐藏 — 字段/处理逻辑保留, 需要再调姿势时把下面 6 行
-        // 和 CombatInputHandler.handleKeyBindings 末尾 6 行 while 一起取消注释。
-        // event.register(POSE_CYCLE_BONE);
-        // event.register(POSE_CYCLE_AXIS);
-        // event.register(POSE_DECREASE);
-        // event.register(POSE_INCREASE);
-        // event.register(POSE_PRINT);
-        // event.register(POSE_RESET_ALL);
+        event.register(POSE_CYCLE_BONE);
+        event.register(POSE_CYCLE_AXIS);
+        event.register(POSE_DECREASE);
+        event.register(POSE_INCREASE);
+        event.register(POSE_PRINT);
+        event.register(POSE_RESET_ALL);
     }
 }

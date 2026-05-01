@@ -60,6 +60,11 @@ public final class MeshManager {
             loadEFAnimation("run_longsword", "animations/biped/living/run_longsword.json");
             loadEFAnimation("sneak", "animations/biped/living/sneak.json");
             LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
+
+            // Use EF-native combat animations (same pipeline as idle/walk)
+            loadEFAnimation("draw_weapon", "animations/biped/combat/draw_weapon.json");
+            loadEFAnimation("sheath_weapon", "animations/biped/combat/sheath_weapon.json");
+            LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
             LOGGER.error("[MeshManager] Failed to load biped model", e);
         }
@@ -329,4 +334,88 @@ public final class MeshManager {
             LOGGER.error("[MeshManager] Failed to load animation: {}", name, e);
         }
     }
+
+    // ---------------------------------------------------------------
+    // Programmatic draw/sheath animations (EF-native delta values)
+    // ---------------------------------------------------------------
+
+    private static final float DEG_TO_RAD = (float) (Math.PI / 180.0);
+
+    private static TransformSheet sheet(float[][] data) {
+        java.util.List<Keyframe> kfs = new java.util.ArrayList<>();
+        for (float[] row : data) {
+            float t = row[0];
+            float rx = row[1] * DEG_TO_RAD, ry = row[2] * DEG_TO_RAD, rz = row[3] * DEG_TO_RAD;
+            org.joml.Quaternionf q = new org.joml.Quaternionf().rotationZYX(rz, ry, rx);
+            kfs.add(new Keyframe(t, new JointTransform(new Vec3f(0, 0, 0), q, new Vec3f(1, 1, 1))));
+        }
+        return new TransformSheet(kfs);
+    }
+
+    private static void createDrawAnimation() {
+        Map<String, TransformSheet> sheets = Maps.newHashMap();
+
+        // Right arm: raise up (rx) + reach behind (ry) → grab sword → return to hold
+        // rx: arm raise/lower, ry: arm forward/backward
+        sheets.put("Shoulder_R", sheet(new float[][] {
+            {0.00f,    0.0f,    0.0f,    5.0f},   // idle
+            {0.08f,   50.0f,  -40.0f,    0.0f},   // arm raises forward-up
+            {0.15f,   80.0f,   30.0f,    0.0f},   // arm up and reaching behind
+            {0.20f,   80.0f,   50.0f,    0.0f},   // at back (grab sword at tick 4)
+            {0.35f,   30.0f,    0.0f,    0.0f},   // pulling forward-down
+            {0.55f,    0.0f,  -17.8f,    0.0f},   // hold position
+            {0.80f,    0.0f,  -17.8f,    0.0f},   // settle
+        }));
+
+        sheets.put("Arm_R", sheet(new float[][] {
+            {0.00f,    0.0f,    0.0f,    0.0f},   // idle
+            {0.12f,   15.0f,   70.0f,    0.0f},   // elbow bent, reaching behind
+            {0.20f,   15.0f,   70.0f,    0.0f},   // hold
+            {0.35f,   12.0f,   35.0f,   -5.0f},   // relaxing
+            {0.55f,   11.0f,   18.5f,   -7.6f},   // hold position
+            {0.80f,   11.0f,   18.5f,   -7.6f},   // settle
+        }));
+
+        sheets.put("Hand_R", sheet(new float[][] {
+            {0.00f,    7.0f,    0.0f,    0.0f},   // idle
+            {0.20f,   15.0f,    0.0f,    0.0f},   // reaching
+            {0.55f,   12.8f,    0.0f,    0.0f},   // hold position
+            {0.80f,   12.8f,    0.0f,    0.0f},   // settle
+        }));
+
+        loadedAnims.put("draw_weapon", sheets);
+        LOGGER.info("[MeshManager] Created draw_weapon animation");
+    }
+
+    private static void createSheathAnimation() {
+        Map<String, TransformSheet> sheets = Maps.newHashMap();
+
+        sheets.put("Shoulder_R", sheet(new float[][] {
+            {0.00f,    0.0f,  -17.8f,    0.0f},   // hold position
+            {0.15f,   30.0f,    0.0f,    0.0f},   // arm rises
+            {0.30f,   80.0f,   50.0f,    0.0f},   // at back (place sword)
+            {0.45f,   80.0f,   50.0f,    0.0f},   // hold
+            {0.60f,   40.0f,  -20.0f,    0.0f},   // coming forward-down
+            {0.80f,    0.0f,    0.0f,    5.0f},   // idle
+        }));
+
+        sheets.put("Arm_R", sheet(new float[][] {
+            {0.00f,   11.0f,   18.5f,   -7.6f},   // hold
+            {0.15f,   12.0f,   35.0f,   -5.0f},   // transitioning
+            {0.35f,   15.0f,   70.0f,    0.0f},   // elbow bent at back
+            {0.45f,   15.0f,   70.0f,    0.0f},   // hold
+            {0.65f,    8.0f,   20.0f,    0.0f},   // relaxing
+            {0.80f,    0.0f,    0.0f,    0.0f},   // idle
+        }));
+
+        sheets.put("Hand_R", sheet(new float[][] {
+            {0.00f,   12.8f,    0.0f,    0.0f},   // hold
+            {0.35f,   15.0f,    0.0f,    0.0f},   // reaching
+            {0.80f,    7.0f,    0.0f,    0.0f},   // idle
+        }));
+
+        loadedAnims.put("sheath_weapon", sheets);
+        LOGGER.info("[MeshManager] Created sheath_weapon animation");
+    }
 }
+

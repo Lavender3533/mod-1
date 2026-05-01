@@ -22,7 +22,8 @@ public final class BlockPoseTweaker {
             "leftUpperArm",  "leftLowerArm",  "leftHand",
             "sword_rot",     "sword_pos",     "sword_blade_roll",
             "back_rot",      "back_pos",
-            "held_rot",      "held_pos"
+            "held_rot",      "held_pos",
+            "ef_shoulder",   "ef_arm"
     };
     private static final String[] AXIS_NAMES = {"X", "Y", "Z"};
 
@@ -33,6 +34,8 @@ public final class BlockPoseTweaker {
     private static final int BACK_POS_INDEX = 10;
     private static final int HELD_ROT_INDEX = 11;
     private static final int HELD_POS_INDEX = 12;
+    private static final int EF_SHOULDER_INDEX = 13;
+    private static final int EF_ARM_INDEX = 14;
 
     private static final float ROT_STEP_DEG = 5.0f;
     private static final float POS_STEP_UNIT = 0.05f;
@@ -95,6 +98,21 @@ public final class BlockPoseTweaker {
         return DELTAS[HELD_POS_INDEX][axis];
     }
 
+    /** SkinnedMeshLayer 调用：EF Shoulder_R 旋转（度）。 */
+    public static float getEfShoulder(int axis) {
+        return DELTAS[EF_SHOULDER_INDEX][axis];
+    }
+
+    /** SkinnedMeshLayer 调用：EF Arm_R 旋转（度）。 */
+    public static float getEfArm(int axis) {
+        return DELTAS[EF_ARM_INDEX][axis];
+    }
+
+    /** 当前是否在调 EF 关节通道。 */
+    public static boolean isEfTweakActive() {
+        return currentBone == EF_SHOULDER_INDEX || currentBone == EF_ARM_INDEX;
+    }
+
     public static void cycleBone() {
         currentBone = (currentBone + 1) % BONE_NAMES.length;
         chatStatus();
@@ -147,7 +165,9 @@ public final class BlockPoseTweaker {
     }
 
     private static float stepFor(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? POS_STEP_UNIT : ROT_STEP_DEG;
+        if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return POS_STEP_UNIT;
+        if (boneIdx == EF_SHOULDER_INDEX || boneIdx == EF_ARM_INDEX) return 10.0f;
+        return ROT_STEP_DEG;
     }
 
     private static String unitFor(int boneIdx) {

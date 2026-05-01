@@ -1,6 +1,5 @@
 package org.example.combatarts.combat.client;
 
-// 未拔刀时在背部渲染武器模型
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
@@ -36,7 +35,6 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         Player player = resolvePlayer(state);
         if (player == null) return;
 
-        // 渲染开关与手里渲染同步: 拔刀第 4 tick 起背后剑消失, 收刀第 6 tick 起背后剑出现
         boolean drawn = CombatCapabilityEvents.getCombat(player)
                 .map(CombatCapabilityEvents::shouldRenderWeaponInHand)
                 .orElse(false);
@@ -48,19 +46,23 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         ItemStack stack = player.getMainHandItem();
         if (stack.isEmpty()) return;
 
-        itemModelResolver.updateForLiving(scratchState, stack, ItemDisplayContext.FIXED, player);
+        Armature armature = MeshManager.getArmature();
+        boolean useArmature = armature != null && MeshManager.getMesh() != null && armature.hasJoint("Chest");
+
+        itemModelResolver.updateForLiving(scratchState, stack,
+                useArmature ? ItemDisplayContext.THIRD_PERSON_RIGHT_HAND : ItemDisplayContext.FIXED,
+                player);
         if (scratchState.isEmpty()) return;
 
         poseStack.pushPose();
 
-        Armature armature = MeshManager.getArmature();
-        if (armature != null && MeshManager.getMesh() != null && armature.hasJoint("Chest")) {
+        if (useArmature) {
             Joint chest = armature.searchJointByName("Chest");
             OpenMatrix4f jointMatrix = armature.getPoseMatrices()[chest.getId()];
             poseStack.scale(-1.0F, -1.0F, 1.0F);
             poseStack.translate(0.0, -1.501, 0.0);
             MathUtils.mulStack(poseStack, jointMatrix);
-            // EF Chest correction matrix for mainhand item on back
+            // EF Chest correction — positions item diagonally across the back
             OpenMatrix4f chestCorrection = new OpenMatrix4f(
                     3.3484866E-8F, -2.809714E-8F, -0.99999994F, 0.0F,
                     -0.6427876F, -0.7660444F, 0.0F, 0.0F,
@@ -75,22 +77,18 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
             model.waist.translateAndRotate(poseStack);
             model.chest.translateAndRotate(poseStack);
             model.sheathBack.translateAndRotate(poseStack);
+
+            poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getBackRot(0)));
+            poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getBackRot(1)));
+            poseStack.mulPose(Axis.ZP.rotationDegrees(BlockPoseTweaker.getBackRot(2)));
+            poseStack.translate(
+                    BlockPoseTweaker.getBackPos(0),
+                    BlockPoseTweaker.getBackPos(1),
+                    BlockPoseTweaker.getBackPos(2)
+            );
+
+            applyBackWeaponTransform(poseStack, weaponType);
         }
-
-        // Live tweaker — 在 baseline 变换之前叠加，X/Y/Z 对齐身体坐标
-        //   X: 沿身体横向（左右），轴翻转可让武器从背左切到背右
-        //   Y: 沿身体竖向（上下），就是你要的"剑尖往上往下转"
-        //   Z: 沿身体前后向（深度），让武器从贴背→突出
-        poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getBackRot(0)));
-        poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getBackRot(1)));
-        poseStack.mulPose(Axis.ZP.rotationDegrees(BlockPoseTweaker.getBackRot(2)));
-        poseStack.translate(
-                BlockPoseTweaker.getBackPos(0),
-                BlockPoseTweaker.getBackPos(1),
-                BlockPoseTweaker.getBackPos(2)
-        );
-
-        applyBackWeaponTransform(poseStack, weaponType);
 
         scratchState.submit(poseStack, collector, packedLight, 0, 0);
 
@@ -98,23 +96,20 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
     }
 
     private static void applyBackWeaponTransform(PoseStack poseStack, WeaponType weaponType) {
-        // Baked from back_rot/back_pos tweaker — 剑和矛通用
         poseStack.mulPose(Axis.ZP.rotationDegrees(35.0f));
         poseStack.translate(0.0f, 0.35f, 0.0f);
 
-        // sheathBack 现在挂在 chest 局部 (0, -1, 2.5) — 上背中线(肩胛骨之间)、背面外侧 0.5px。
-        // 此处只做：让物品面朝身体外侧 + 斜挎角度 + 微调位置。
         switch (weaponType) {
             case SPEAR -> {
-                poseStack.mulPose(Axis.YP.rotationDegrees(180.0f));   // 物品正面朝外(远离身体)
-                poseStack.mulPose(Axis.ZP.rotationDegrees(30.0f));    // 斜挎 30°
-                poseStack.translate(-2.0f / 16.0f, 1.0f / 16.0f, 0);  // 略偏右肩 + 微下移让中段贴背
+                poseStack.mulPose(Axis.YP.rotationDegrees(180.0f));
+                poseStack.mulPose(Axis.ZP.rotationDegrees(30.0f));
+                poseStack.translate(-2.0f / 16.0f, 1.0f / 16.0f, 0);
                 poseStack.scale(1.0f, 1.0f, 1.0f);
             }
             case SWORD -> {
-                poseStack.mulPose(Axis.YP.rotationDegrees(180.0f));   // 物品正面朝外
-                poseStack.mulPose(Axis.ZP.rotationDegrees(45.0f));    // 斜挎 45° (剑柄在右上、剑尖在左下)
-                poseStack.translate(-1.5f / 16.0f, 0, 0);             // 略偏右肩
+                poseStack.mulPose(Axis.YP.rotationDegrees(180.0f));
+                poseStack.mulPose(Axis.ZP.rotationDegrees(45.0f));
+                poseStack.translate(-1.5f / 16.0f, 0, 0);
                 poseStack.scale(0.9f, 0.9f, 0.9f);
             }
             default -> {
