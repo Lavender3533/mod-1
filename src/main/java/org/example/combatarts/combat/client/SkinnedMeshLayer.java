@@ -50,11 +50,16 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         // Freeze pose for EF joint tweaking
         boolean tweakMode = BlockPoseTweaker.isEfTweakActive();
 
-        // Upper body joints — combat animation controls these during draw/sheath
-        java.util.Set<String> upperBodyJoints = java.util.Set.of(
+        // Draw/sheath: only right arm from combat, everything else from locomotion
+        java.util.Set<String> drawArmJoints = java.util.Set.of(
                 "Shoulder_R", "Arm_R", "Hand_R", "Tool_R", "Elbow_R");
 
-        boolean isCombatAnim = "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+        boolean isDrawSheath = "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+        boolean isAttack = java.util.Set.of(
+                "sword_light_1", "sword_light_2", "sword_light_3", "sword_dash",
+                "block", "parry"
+        ).contains(animName);
+        boolean isDodge = "dodge".equals(animName);
 
         Pose targetPose;
         if (tweakMode) {
@@ -67,23 +72,31 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     BlockPoseTweaker.getEfArm(0),
                     BlockPoseTweaker.getEfArm(1),
                     BlockPoseTweaker.getEfArm(2));
-        } else if (isCombatAnim) {
-            // Upper body: combat animation, Lower body: locomotion
+        } else if (isDrawSheath) {
+            // Draw/sheath: right arm from combat, everything else from locomotion
             float combatTime = computeAnimTime(player, animName, state);
             Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
-
             String locoAnim = resolveLocomotion(player);
             float locoTime = computeAnimTime(player, locoAnim, state);
             Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
 
             targetPose = new Pose();
-            // Merge: upper body from combat, everything else from locomotion
             locoPose.forEachEnabledTransforms((name, jt) ->
                     targetPose.putJointData(name, jt.copy()));
             combatPose.forEachEnabledTransforms((name, jt) -> {
-                if (upperBodyJoints.contains(name))
+                if (drawArmJoints.contains(name))
                     targetPose.putJointData(name, jt.copy());
             });
+        } else if (isAttack) {
+            // Attacks/block/parry: full body from combat animation (EF-style).
+            // Movement is hard-slowed by SLOWNESS V during attacks (see CombatCapabilityEvents),
+            // so we don't need to blend in locomotion legs — sliding won't be visible.
+            float combatTime = computeAnimTime(player, animName, state);
+            targetPose = MeshManager.getPoseAtTime(animName, combatTime);
+        } else if (isDodge) {
+            // Dodge: full body
+            float combatTime = computeAnimTime(player, animName, state);
+            targetPose = MeshManager.getPoseAtTime(animName, combatTime);
         } else {
             float animTime = computeAnimTime(player, animName, state);
             targetPose = MeshManager.getPoseAtTime(animName, animTime);
@@ -189,6 +202,19 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             switch (state) {
                 case DRAW_WEAPON -> result[0] = "draw_weapon";
                 case SHEATH_WEAPON -> result[0] = "sheath_weapon";
+                case ATTACK_LIGHT -> {
+                    int combo = cap.getComboCount();
+                    if (combo == 99) result[0] = "sword_dash";
+                    else result[0] = switch (combo) {
+                        case 2 -> "sword_light_2";
+                        case 3 -> "sword_light_3";
+                        default -> "sword_light_1";
+                    };
+                }
+                case ATTACK_HEAVY, ATTACK_HEAVY_CHARGING -> result[0] = "sword_light_3";
+                case DODGE -> result[0] = "dodge";
+                case BLOCK -> result[0] = "block";
+                case PARRY -> result[0] = "parry";
                 default -> {}
             }
         });
@@ -240,7 +266,9 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     }
 
     private static boolean isTimedAnimation(String animName) {
-        return "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+        return animName != null && !animName.contains("idle") && !animName.contains("walk")
+                && !animName.contains("run") && !animName.equals("sneak")
+                && !animName.equals("hold_longsword");
     }
 
     private static boolean hasTweakValues() {

@@ -156,6 +156,8 @@ public class CombatCapabilityEvents {
                     CombatSoundPlayer.playStateSound(event.player(), cap.getState(), cap.getWeaponType(), cap.getComboCount());
                 }
 
+                // 攻击执行中减速 → 在客户端 CombatInputHandler.onMovementInput 里做(避免改 attribute 触发 FOV)
+
                 if (prevState != cap.getState()
                         || prevWeaponDrawn != cap.isWeaponDrawn()
                         || prevComboCount != cap.getComboCount()

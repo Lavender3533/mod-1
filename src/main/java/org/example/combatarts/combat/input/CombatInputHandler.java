@@ -89,6 +89,19 @@ public class CombatInputHandler {
     }
 
     @SubscribeEvent
+    public static void onMovementInput(net.minecraftforge.client.event.MovementInputUpdateEvent event) {
+        if (!(event.getEntity() instanceof net.minecraft.client.player.LocalPlayer lp)) return;
+
+        CombatCapabilityEvents.getCombat(lp).ifPresent(cap -> {
+            CombatState s = cap.getState();
+            if (s == CombatState.ATTACK_LIGHT || s == CombatState.ATTACK_HEAVY) {
+                // 攻击执行中:缩放移动输入,避免边走边砍滑步、姿势不协调
+                event.getInput().moveVector = event.getInput().moveVector.scale(0.4f);
+            }
+        });
+    }
+
+    @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.screen != null) return;

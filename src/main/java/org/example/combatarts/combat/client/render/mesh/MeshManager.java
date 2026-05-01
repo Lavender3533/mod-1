@@ -61,9 +61,16 @@ public final class MeshManager {
             loadEFAnimation("sneak", "animations/biped/living/sneak.json");
             LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
 
-            // Use EF-native combat animations (same pipeline as idle/walk)
+            // Combat animations
             loadEFAnimation("draw_weapon", "animations/biped/combat/draw_weapon.json");
             loadEFAnimation("sheath_weapon", "animations/biped/combat/sheath_weapon.json");
+            loadEFAnimation("sword_light_1", "animations/biped/combat/sword_auto1.json");
+            loadEFAnimation("sword_light_2", "animations/biped/combat/sword_auto2.json");
+            loadEFAnimation("sword_light_3", "animations/biped/combat/sword_auto3.json");
+            loadEFAnimation("sword_dash", "animations/biped/combat/sword_dash.json");
+            loadEFAnimation("dodge", "animations/biped/combat/step_backward.json");
+            loadEFAnimation("block", "animations/biped/combat/guard_sword.json");
+            loadEFAnimation("parry", "animations/biped/combat/guard_sword_hit.json");
             LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
             LOGGER.error("[MeshManager] Failed to load biped model", e);
@@ -322,6 +329,15 @@ public final class MeshManager {
                     OpenMatrix4f invLocal = new OpenMatrix4f(joint.getLocalTransform());
                     invLocal.invert();
                     mat.mulFront(invLocal);
+
+                    // EF's correctRootJoint: zero out Root X/Z translation in the final delta.
+                    // Root translation in EF attacks is "root motion" meant to move the entity,
+                    // NOT to displace the model geometry. Keeping it warps the body geometry.
+                    // Must be done AFTER all transforms, on the final delta translation.
+                    if (jointName.equals("Root")) {
+                        mat.m30 = 0.0F;
+                        mat.m32 = 0.0F;
+                    }
 
                     JointTransform jt = JointTransform.fromMatrix(mat);
                     jt.rotation().normalize();
