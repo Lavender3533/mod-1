@@ -69,7 +69,8 @@ public final class MeshManager {
             loadEFAnimation("sword_light_3", "animations/biped/combat/sword_auto3.json");
             loadEFAnimation("sword_dash", "animations/biped/combat/sword_dash.json");
             loadEFAnimation("dodge", "animations/biped/combat/step_backward.json");
-            loadEFAnimation("block", "animations/biped/combat/guard_sword.json");
+            createBlockAnimation();        // 程序化格挡姿势(替换 EF guard_sword)
+            createHeavyChargeAnimation();  // 程序化重击蓄力 hold(右手微微后撤)
             loadEFAnimation("parry", "animations/biped/combat/guard_sword_hit.json");
             LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
@@ -396,7 +397,15 @@ public final class MeshManager {
             {0.00f,    7.0f,    0.0f,    0.0f},   // idle
             {0.20f,   15.0f,    0.0f,    0.0f},   // reaching
             {0.55f,   12.8f,    0.0f,    0.0f},   // hold position
-            {0.80f,   12.8f,    0.0f,    0.0f},   // settle
+            {0.80f,   12.8f,    0.0f,    0.0f},   // settle (拔刀完成)
+            {1.20f,   12.8f,    0.0f,    0.0f},   // 持续保持(转刀期间手腕不动)
+        }));
+
+        // 转刀(调试版): Tool_R 整段持续 90° X 旋转。如果剑从拔刀第一瞬间就明显歪着 → 路径生效;
+        // 如果剑姿势完全正常没歪 → Tool_R 动画根本没被应用,需要查别的渲染路径。
+        sheets.put("Tool_R", sheet(new float[][] {
+            {0.00f,   90.0f,   0.0f,    0.0f},
+            {1.20f,   90.0f,   0.0f,    0.0f},
         }));
 
         loadedAnims.put("draw_weapon", sheets);
@@ -432,6 +441,71 @@ public final class MeshManager {
 
         loadedAnims.put("sheath_weapon", sheets);
         LOGGER.info("[MeshManager] Created sheath_weapon animation");
+    }
+
+    /**
+     * 程序化格挡姿势:剑横在身前(单手剑、肘抬起、剑刃竖直挡在胸前)。
+     * 数值来自 commit 6ff555b "round 2 烘焙" — 之前在 Bedrock 动画格式下打磨出的值,
+     * EF 骨骼名称对齐(Shoulder/Arm/Hand)。可用 BlockPoseTweaker 在 BLOCK 状态下热调微修。
+     */
+    private static void createBlockAnimation() {
+        Map<String, TransformSheet> sheets = Maps.newHashMap();
+
+        // 右手举剑横在身前
+        sheets.put("Shoulder_R", sheet(new float[][] {
+            {0.0f,    0.0f,  -20.0f,   5.0f},
+            {1.0f,    0.0f,  -20.0f,   5.0f},
+        }));
+        sheets.put("Arm_R", sheet(new float[][] {
+            {0.0f, -105.0f,   20.0f,   0.0f},
+            {1.0f, -105.0f,   20.0f,   0.0f},
+        }));
+        sheets.put("Hand_R", sheet(new float[][] {
+            {0.0f,    0.0f,  -20.0f,   0.0f},
+            {1.0f,    0.0f,  -20.0f,   0.0f},
+        }));
+
+        // 左手扶柄
+        sheets.put("Shoulder_L", sheet(new float[][] {
+            {0.0f,  -15.0f,   37.0f,  10.0f},
+            {1.0f,  -15.0f,   37.0f,  10.0f},
+        }));
+        sheets.put("Arm_L", sheet(new float[][] {
+            {0.0f,  -70.0f,   -5.0f,  -8.0f},
+            {1.0f,  -70.0f,   -5.0f,  -8.0f},
+        }));
+        sheets.put("Hand_L", sheet(new float[][] {
+            {0.0f,    0.0f,    0.0f,   0.0f},
+            {1.0f,    0.0f,    0.0f,   0.0f},
+        }));
+
+        loadedAnims.put("block", sheets);
+        LOGGER.info("[MeshManager] Created programmatic block animation (baked from 6ff555b)");
+    }
+
+    /**
+     * 程序化重击蓄力姿势:右手向后微撤准备挥砍。静态 hold,左手不动。
+     * 蓄力是无限时长的 held state(玩家长按 F),所以是静态姿势,不是 timed 动画。
+     */
+    private static void createHeavyChargeAnimation() {
+        Map<String, TransformSheet> sheets = Maps.newHashMap();
+
+        // 右手后撤备砍:肩稍抬+外旋后展、肘明显弯曲到位
+        sheets.put("Shoulder_R", sheet(new float[][] {
+            {0.0f,  30.0f,   25.0f,   0.0f},
+            {1.0f,  30.0f,   25.0f,   0.0f},
+        }));
+        sheets.put("Arm_R", sheet(new float[][] {
+            {0.0f, -60.0f,    0.0f,   0.0f},   // 弯肘
+            {1.0f, -60.0f,    0.0f,   0.0f},
+        }));
+        sheets.put("Hand_R", sheet(new float[][] {
+            {0.0f,   0.0f,    0.0f,   0.0f},
+            {1.0f,   0.0f,    0.0f,   0.0f},
+        }));
+
+        loadedAnims.put("sword_heavy_charge", sheets);
+        LOGGER.info("[MeshManager] Created programmatic heavy charge animation");
     }
 }
 

@@ -97,6 +97,14 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             poseStack.mulPose(new Quaternionf().rotateAxis(       // sword_blade_roll delta
                     (float) Math.toRadians(-10.0F), 0.0F, 0.574F, -0.819F));
 
+            // 烘焙第 3 轮 tweaker delta (新蒙皮模型上调出的):
+            poseStack.mulPose(Axis.XP.rotationDegrees(-170.0F));  // sword_rot X
+            poseStack.mulPose(Axis.YP.rotationDegrees(245.0F));   // sword_rot Y
+            poseStack.mulPose(Axis.ZP.rotationDegrees(-35.0F));   // sword_rot Z
+            poseStack.translate(-0.20F, 0.05F, 0.0F);             // sword_pos
+            poseStack.mulPose(new Quaternionf().rotateAxis(       // sword_blade_roll
+                    (float) Math.toRadians(-25.0F), 0.0F, 0.574F, -0.819F));
+
             // Live tweaker — 叠加调试偏移（继续微调时使用，记得调完按 ' 重置）
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getSwordRot(0)));
             poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getSwordRot(1)));

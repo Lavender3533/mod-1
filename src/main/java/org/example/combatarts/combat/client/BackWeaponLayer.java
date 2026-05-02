@@ -78,6 +78,9 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
             model.chest.translateAndRotate(poseStack);
             model.sheathBack.translateAndRotate(poseStack);
 
+            // 烘焙的背挂武器位置偏移(用户 tweaker 调出的)
+            poseStack.translate(0.0F, 0.0F, -0.05F);
+
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getBackRot(0)));
             poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getBackRot(1)));
             poseStack.mulPose(Axis.ZP.rotationDegrees(BlockPoseTweaker.getBackRot(2)));

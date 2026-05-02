@@ -23,7 +23,8 @@ public final class BlockPoseTweaker {
             "sword_rot",     "sword_pos",     "sword_blade_roll",
             "back_rot",      "back_pos",
             "held_rot",      "held_pos",
-            "ef_shoulder",   "ef_arm"
+            "ef_shoulder_R", "ef_arm_R", "ef_hand_R",
+            "ef_shoulder_L", "ef_arm_L", "ef_hand_L"
     };
     private static final String[] AXIS_NAMES = {"X", "Y", "Z"};
 
@@ -34,8 +35,8 @@ public final class BlockPoseTweaker {
     private static final int BACK_POS_INDEX = 10;
     private static final int HELD_ROT_INDEX = 11;
     private static final int HELD_POS_INDEX = 12;
-    private static final int EF_SHOULDER_INDEX = 13;
-    private static final int EF_ARM_INDEX = 14;
+    private static final int EF_FIRST_INDEX = 13;       // ef_shoulder_R
+    private static final int EF_LAST_INDEX = 18;        // ef_hand_L
 
     private static final float ROT_STEP_DEG = 5.0f;
     private static final float POS_STEP_UNIT = 0.05f;
@@ -98,20 +99,25 @@ public final class BlockPoseTweaker {
         return DELTAS[HELD_POS_INDEX][axis];
     }
 
-    /** SkinnedMeshLayer 调用：EF Shoulder_R 旋转（度）。 */
-    public static float getEfShoulder(int axis) {
-        return DELTAS[EF_SHOULDER_INDEX][axis];
+    /** SkinnedMeshLayer 调用:6 个 EF 手臂关节的旋转偏移(度)。jointName 形如 "Shoulder_R"/"Arm_L"/"Hand_R" 等。 */
+    public static float getEfDelta(String jointName, int axis) {
+        int idx = switch (jointName) {
+            case "Shoulder_R" -> EF_FIRST_INDEX;       // 13
+            case "Arm_R"      -> EF_FIRST_INDEX + 1;   // 14
+            case "Hand_R"     -> EF_FIRST_INDEX + 2;   // 15
+            case "Shoulder_L" -> EF_FIRST_INDEX + 3;   // 16
+            case "Arm_L"      -> EF_FIRST_INDEX + 4;   // 17
+            case "Hand_L"     -> EF_FIRST_INDEX + 5;   // 18
+            default -> -1;
+        };
+        return idx < 0 ? 0f : DELTAS[idx][axis];
     }
 
-    /** SkinnedMeshLayer 调用：EF Arm_R 旋转（度）。 */
-    public static float getEfArm(int axis) {
-        return DELTAS[EF_ARM_INDEX][axis];
-    }
-
-    /** 当前是否在调 EF 关节通道。 */
-    public static boolean isEfTweakActive() {
-        return currentBone == EF_SHOULDER_INDEX || currentBone == EF_ARM_INDEX;
-    }
+    /** EF 手臂关节名数组(供 SkinnedMeshLayer 遍历应用)。 */
+    public static final String[] EF_BLOCK_JOINTS = {
+            "Shoulder_R", "Arm_R", "Hand_R",
+            "Shoulder_L", "Arm_L", "Hand_L"
+    };
 
     public static void cycleBone() {
         currentBone = (currentBone + 1) % BONE_NAMES.length;
@@ -166,7 +172,7 @@ public final class BlockPoseTweaker {
 
     private static float stepFor(int boneIdx) {
         if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return POS_STEP_UNIT;
-        if (boneIdx == EF_SHOULDER_INDEX || boneIdx == EF_ARM_INDEX) return 10.0f;
+        if (boneIdx >= EF_FIRST_INDEX && boneIdx <= EF_LAST_INDEX) return 10.0f;
         return ROT_STEP_DEG;
     }
 

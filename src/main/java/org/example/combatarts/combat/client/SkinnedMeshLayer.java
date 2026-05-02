@@ -47,32 +47,21 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         // Use EF animations for all states
         String animName = resolveAnimation(player);
 
-        // Freeze pose for EF joint tweaking
-        boolean tweakMode = BlockPoseTweaker.isEfTweakActive();
-
         // Draw/sheath: only right arm from combat, everything else from locomotion
         java.util.Set<String> drawArmJoints = java.util.Set.of(
                 "Shoulder_R", "Arm_R", "Hand_R", "Tool_R", "Elbow_R");
 
         boolean isDrawSheath = "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
+        boolean isBlock = "block".equals(animName);
+        boolean isHeavyCharge = "sword_heavy_charge".equals(animName);
         boolean isAttack = java.util.Set.of(
                 "sword_light_1", "sword_light_2", "sword_light_3", "sword_dash",
-                "block", "parry"
+                "parry"
         ).contains(animName);
         boolean isDodge = "dodge".equals(animName);
 
         Pose targetPose;
-        if (tweakMode) {
-            targetPose = MeshManager.getPoseAtTime("idle", 0);
-            applyTweakToJoint(targetPose, armature, "Arm_R",
-                    BlockPoseTweaker.getEfShoulder(0),
-                    BlockPoseTweaker.getEfShoulder(1),
-                    BlockPoseTweaker.getEfShoulder(2));
-            applyTweakToJoint(targetPose, armature, "Hand_R",
-                    BlockPoseTweaker.getEfArm(0),
-                    BlockPoseTweaker.getEfArm(1),
-                    BlockPoseTweaker.getEfArm(2));
-        } else if (isDrawSheath) {
+        if (isDrawSheath) {
             // Draw/sheath: right arm from combat, everything else from locomotion
             float combatTime = computeAnimTime(player, animName, state);
             Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
@@ -88,11 +77,56 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     targetPose.putJointData(name, jt.copy());
             });
         } else if (isAttack) {
-            // Attacks/block/parry: full body from combat animation (EF-style).
+            // Attacks/parry: full body from combat animation (EF-style).
             // Movement is hard-slowed by SLOWNESS V during attacks (see CombatCapabilityEvents),
             // so we don't need to blend in locomotion legs — sliding won't be visible.
             float combatTime = computeAnimTime(player, animName, state);
             targetPose = MeshManager.getPoseAtTime(animName, combatTime);
+        } else if (isBlock) {
+            // Block: hold pose. Arms from programmatic block, body/legs from locomotion
+            // (player can stand still or slowly back up while blocking).
+            float combatTime = computeAnimTime(player, animName, state);
+            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+            String locoAnim = resolveLocomotion(player);
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+            targetPose = new Pose();
+            locoPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            // 覆盖 block 中设置的关节(只有手臂)
+            combatPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+
+            // 烘焙的 BLOCK 姿势精调值(用户 tweaker 调出的)。world-space ZYX 顺序应用,
+            // 顺序: shoulder → arm → hand,与 tweaker 实时调试时一致。
+            applyTweakToJoint(targetPose, armature, "Shoulder_R", -130,  20,  40);
+            applyTweakToJoint(targetPose, armature, "Arm_R",       -60,  60,   0);
+            applyTweakToJoint(targetPose, armature, "Hand_R",      -10,   0,  70);
+            applyTweakToJoint(targetPose, armature, "Shoulder_L",  -60, -20,  20);
+            applyTweakToJoint(targetPose, armature, "Arm_L",         0, -10,  20);
+            applyTweakToJoint(targetPose, armature, "Hand_L",      -60,  10, -80);
+
+            // 实时 tweaker 偏移(调好后通常归零,留作以后再微调用)
+            for (String jointName : BlockPoseTweaker.EF_BLOCK_JOINTS) {
+                applyTweakToJoint(targetPose, armature, jointName,
+                        BlockPoseTweaker.getEfDelta(jointName, 0),
+                        BlockPoseTweaker.getEfDelta(jointName, 1),
+                        BlockPoseTweaker.getEfDelta(jointName, 2));
+            }
+        } else if (isHeavyCharge) {
+            // 重击蓄力:右手 hold 后撤,身体/腿用 locomotion(玩家可以慢慢走着蓄力)
+            float combatTime = computeAnimTime(player, animName, state);
+            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+            String locoAnim = resolveLocomotion(player);
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+            targetPose = new Pose();
+            locoPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            combatPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
         } else if (isDodge) {
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
@@ -211,7 +245,8 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         default -> "sword_light_1";
                     };
                 }
-                case ATTACK_HEAVY, ATTACK_HEAVY_CHARGING -> result[0] = "sword_light_3";
+                case ATTACK_HEAVY -> result[0] = "sword_light_2";       // 重击释放复用 light_2 挥砍
+                case ATTACK_HEAVY_CHARGING -> result[0] = "sword_heavy_charge";   // 静态蓄力 hold
                 case DODGE -> result[0] = "dodge";
                 case BLOCK -> result[0] = "block";
                 case PARRY -> result[0] = "parry";
@@ -271,6 +306,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 && !animName.equals("hold_longsword");
     }
 
+    @SuppressWarnings("unused")
     private static boolean hasTweakValues() {
         for (int i = 0; i < 3; i++) {
             if (BlockPoseTweaker.getHeldRot(i) != 0) return true;
