@@ -24,6 +24,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     private static final float COMBAT_TRANSITION_DURATION = 0.12f;
 
     private String prevAnimName = "idle";
+    private String prevLocoAnim = "idle";
     private Pose prevPose = new Pose();
     private float transitionTimer = 0f;
     private float currentTransitionDuration = TRANSITION_DURATION;
@@ -60,12 +61,36 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         ).contains(animName);
         boolean isDodge = "dodge".equals(animName);
 
+        // 当前帧使用的 locomotion 子动画名（仅在 isBlock/isHeavyCharge/isDrawSheath 分支会赋值）。
+        // 用于触发子动画切换时的过渡插值，避免 idle ↔ walk 硬切导致的腿部抽动。
+        String activeLocoAnim = null;
+
         Pose targetPose;
-        if (isDrawSheath) {
+        String debugAnim = BlockPoseTweaker.getDebugTargetAnim();
+        if (debugAnim != null) {
+            // ==== 调试冻结模式 ====
+            // 模型冻结到目标 anim 的 frame 0 + EF tweaker 偏移叠加。按 ; 切换目标 anim,
+            // 切到 OFF 时退出冻结。EF 偏移只在冻结时生效,不污染正常游戏中的任何状态。
+            // 用 hold_longsword 作为完整身体基础,目标 anim 的 joint(通常只覆盖右臂)叠加上去。
+            Pose basePose = MeshManager.getPoseAtTime("hold_longsword", 0f);
+            if (!"hold_longsword".equals(debugAnim)) {
+                Pose overlay = MeshManager.getPoseAtTime(debugAnim, 0f);
+                overlay.forEachEnabledTransforms((name, jt) ->
+                        basePose.putJointData(name, jt.copy()));
+            }
+            targetPose = basePose;
+            for (String jointName : BlockPoseTweaker.EF_BLOCK_JOINTS) {
+                applyTweakToJoint(targetPose, armature, jointName,
+                        BlockPoseTweaker.getEfDelta(jointName, 0),
+                        BlockPoseTweaker.getEfDelta(jointName, 1),
+                        BlockPoseTweaker.getEfDelta(jointName, 2));
+            }
+        } else if (isDrawSheath) {
             // Draw/sheath: right arm from combat, everything else from locomotion
             float combatTime = computeAnimTime(player, animName, state);
             Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
             String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
             float locoTime = computeAnimTime(player, locoAnim, state);
             Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
 
@@ -88,6 +113,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             float combatTime = computeAnimTime(player, animName, state);
             Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
             String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
             float locoTime = computeAnimTime(player, locoAnim, state);
             Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
 
@@ -115,17 +141,37 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         BlockPoseTweaker.getEfDelta(jointName, 2));
             }
         } else if (isHeavyCharge) {
-            // 重击蓄力:右手 hold 后撤,身体/腿用 locomotion(玩家可以慢慢走着蓄力)
-            float combatTime = computeAnimTime(player, animName, state);
-            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+            // 重击蓄力：身体/腿用 locomotion，上半身用 hold_longsword 当基础铺底，
+            // 然后用 sword_heavy_charge 程序化动画（MeshManager.createHeavyChargeAnimation）
+            // 覆盖右臂 3 个关节 — 这里的 Shoulder/Arm/Hand 数据才是"备砍后撤"的真正姿势。
             String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
             float locoTime = computeAnimTime(player, locoAnim, state);
             Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+            Pose holdPose = MeshManager.getPoseAtTime("hold_longsword", 0f);
+            Pose chargePose = MeshManager.getPoseAtTime("sword_heavy_charge", 0f);
 
             targetPose = new Pose();
+            // 1. 全身铺 locomotion（含腿动画）
             locoPose.forEachEnabledTransforms((name, jt) ->
                     targetPose.putJointData(name, jt.copy()));
-            combatPose.forEachEnabledTransforms((name, jt) ->
+            // 2. 躯干/头/颈用 hold_longsword 持刀基础（避免 loco 自带的躯干摇摆破坏蓄力体感）
+            holdPose.forEachEnabledTransforms((name, jt) -> {
+                if (name.equals("Torso") || name.equals("Chest") || name.equals("Head")
+                        || name.equals("Neck")) {
+                    targetPose.putJointData(name, jt.copy());
+                }
+            });
+            // 3. 双臂先铺 hold_longsword（提供左臂、Elbow、Tool 的合理基础），
+            holdPose.forEachEnabledTransforms((name, jt) -> {
+                if (name.startsWith("Shoulder_") || name.startsWith("Arm_")
+                        || name.startsWith("Hand_") || name.startsWith("Elbow_")
+                        || name.startsWith("Tool_")) {
+                    targetPose.putJointData(name, jt.copy());
+                }
+            });
+            // 4. 关键：用 sword_heavy_charge 的右臂关节真正覆盖（之前漏了这一步）
+            chargePose.forEachEnabledTransforms((name, jt) ->
                     targetPose.putJointData(name, jt.copy()));
         } else if (isDodge) {
             // Dodge: full body
@@ -147,7 +193,13 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     ? COMBAT_TRANSITION_DURATION : TRANSITION_DURATION;
             prevAnimName = animName;
             transitionTimer = currentTransitionDuration;
+        } else if (activeLocoAnim != null && !activeLocoAnim.equals(prevLocoAnim)) {
+            // 顶层 anim 不变（如蓄力/格挡保持），但 locomotion 子动画切换时
+            // 也需要插值，否则腿部姿势会瞬间 snap → 抽动。用稍长的过渡使切换更平滑。
+            currentTransitionDuration = TRANSITION_DURATION;
+            transitionTimer = currentTransitionDuration;
         }
+        if (activeLocoAnim != null) prevLocoAnim = activeLocoAnim;
 
         Pose finalPose;
         if (transitionTimer > 0) {
