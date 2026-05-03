@@ -6,7 +6,7 @@ public enum CombatState {
     RUN(2, true, 0),
     CROUCH(3, true, 0),
     JUMP(4, true, 0),
-    DRAW_WEAPON(10, false, 24),    // 16→24: 拔刀 0.8s + 转刀 0.4s = 1.2s 总长
+    DRAW_WEAPON(10, false, 16),
     SHEATH_WEAPON(10, false, 14),
     ATTACK_LIGHT(20, false, 14),
     ATTACK_HEAVY(25, false, 24),

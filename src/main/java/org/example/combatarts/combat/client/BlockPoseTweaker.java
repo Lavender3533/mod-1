@@ -24,7 +24,8 @@ public final class BlockPoseTweaker {
             "back_rot",      "back_pos",
             "held_rot",      "held_pos",
             "ef_shoulder_R", "ef_arm_R", "ef_hand_R",
-            "ef_shoulder_L", "ef_arm_L", "ef_hand_L"
+            "ef_shoulder_L", "ef_arm_L", "ef_hand_L",
+            "spin_axis",     "spin_pivot",    "spin_freeze"
     };
     private static final String[] AXIS_NAMES = {"X", "Y", "Z"};
 
@@ -37,6 +38,9 @@ public final class BlockPoseTweaker {
     private static final int HELD_POS_INDEX = 12;
     private static final int EF_FIRST_INDEX = 13;       // ef_shoulder_R
     private static final int EF_LAST_INDEX = 18;        // ef_hand_L
+    private static final int SPIN_AXIS_INDEX = 19;      // 转刀旋转轴向量 (vx,vy,vz)
+    private static final int SPIN_PIVOT_INDEX = 20;     // 转刀绕点旋转中心 (unit)
+    private static final int SPIN_FREEZE_INDEX = 21;    // X = 冻结 spinT (0..1)，配合 ; → draw_weapon 静态调试
 
     private static final float ROT_STEP_DEG = 5.0f;
     private static final float POS_STEP_UNIT = 0.05f;
@@ -99,6 +103,21 @@ public final class BlockPoseTweaker {
         return DELTAS[HELD_POS_INDEX][axis];
     }
 
+    /** 转刀旋转轴向量分量 (vx,vy,vz)；CombatItemInHandLayer 归一化后用作转刀轴。全 0 时退化为 X 轴。 */
+    public static float getSpinAxis(int axis) {
+        return DELTAS[SPIN_AXIS_INDEX][axis];
+    }
+
+    /** 转刀绕点旋转的中心偏移 (unit)；相对于 Tool_R 锚点。pivot=0 时绕剑模型原点(剑柄末端)转。 */
+    public static float getSpinPivot(int axis) {
+        return DELTAS[SPIN_PIVOT_INDEX][axis];
+    }
+
+    /** 调试冻结模式下使用的 spinT (0..1)。配合 ; → draw_weapon 把转刀停在固定角度静态调参。 */
+    public static float getSpinFreeze() {
+        return DELTAS[SPIN_FREEZE_INDEX][0];
+    }
+
     /** SkinnedMeshLayer 调用:6 个 EF 手臂关节的旋转偏移(度)。jointName 形如 "Shoulder_R"/"Arm_L"/"Hand_R" 等。 */
     public static float getEfDelta(String jointName, int axis) {
         int idx = switch (jointName) {
@@ -119,14 +138,84 @@ public final class BlockPoseTweaker {
             "Shoulder_L", "Arm_L", "Hand_L"
     };
 
+    // ==== 调试冻结目标 ====
+    // OFF=正常游戏(tweaker EF 通道仅在 BLOCK 状态生效),其余=冻结到对应 anim 的 frame 0,
+    // EF tweaker 偏移叠加上去。按 ; 切换。这样调任何状态的姿势都不会污染正常游戏。
+    private static final String[] DEBUG_TARGETS = {
+            null,                    // 0: OFF
+            "hold_longsword",        // 1: 持刀站立
+            "sword_heavy_charge",    // 2: 重击蓄力
+            "draw_weapon",           // 3: 拔刀(frame 0)
+            "sheath_weapon",         // 4: 收刀(frame 0)
+            "block",                 // 5: 格挡
+    };
+    private static final String[] DEBUG_TARGET_NAMES = {
+            "OFF (正常游戏)",
+            "hold_longsword (持刀站立)",
+            "sword_heavy_charge (重击蓄力)",
+            "draw_weapon (拔刀)",
+            "sheath_weapon (收刀)",
+            "block (格挡)",
+    };
+    private static int currentDebugTarget = 0;
+
+    /** 切换到下一个调试目标(off→hold→charge→draw→sheath→block→off)。 */
+    public static void cycleDebugTarget() {
+        currentDebugTarget = (currentDebugTarget + 1) % DEBUG_TARGETS.length;
+        chat(ChatFormatting.YELLOW + "[Tweak] 调试目标: "
+                + ChatFormatting.AQUA + DEBUG_TARGET_NAMES[currentDebugTarget]);
+    }
+
+    /** SkinnedMeshLayer 调用:返回当前冻结目标的 anim 名。null = 不冻结(正常游戏)。 */
+    public static String getDebugTargetAnim() {
+        return DEBUG_TARGETS[currentDebugTarget];
+    }
+
     public static void cycleBone() {
         currentBone = (currentBone + 1) % BONE_NAMES.length;
+        chatStatus();
+    }
+
+    /** 鼠标中键调用:只在 EF 通道 (13..18) 内循环切骨骼,跳过旧通道。 */
+    public static void cycleEfBoneOnly() {
+        if (currentBone < EF_FIRST_INDEX || currentBone > EF_LAST_INDEX) {
+            currentBone = EF_FIRST_INDEX;
+        } else {
+            currentBone = currentBone == EF_LAST_INDEX ? EF_FIRST_INDEX : currentBone + 1;
+        }
         chatStatus();
     }
 
     public static void cycleAxis() {
         currentAxis = (currentAxis + 1) % AXIS_NAMES.length;
         chatStatus();
+    }
+
+    /** 鼠标滚轮调用:正向滚动切下一个轴,反向切上一个轴。 */
+    public static void cycleAxisFromScroll(double scrollDelta) {
+        if (scrollDelta > 0) {
+            currentAxis = (currentAxis + 1) % AXIS_NAMES.length;
+        } else if (scrollDelta < 0) {
+            currentAxis = (currentAxis + AXIS_NAMES.length - 1) % AXIS_NAMES.length;
+        }
+        chatStatus();
+    }
+
+    /** 鼠标拖动调用:dxPixels 像素 → 累加到当前 [bone][axis],中等灵敏度 1px = 0.5°。 */
+    public static void mouseAdjust(double dxPixels) {
+        DELTAS[currentBone][currentAxis] += (float)(dxPixels * 0.5);
+    }
+
+    /** PoseTweakerScreen 调用:返回 HUD 显示用的状态文字(无颜色码)。 */
+    public static String getStatusText() {
+        String target = DEBUG_TARGETS[currentDebugTarget] == null
+                ? "OFF" : DEBUG_TARGET_NAMES[currentDebugTarget];
+        return String.format("[%s]  %s.%s = %s%s",
+                target,
+                BONE_NAMES[currentBone],
+                AXIS_NAMES[currentAxis],
+                fmt(DELTAS[currentBone][currentAxis], currentBone),
+                unitFor(currentBone));
     }
 
     public static void increase() {
@@ -172,12 +261,19 @@ public final class BlockPoseTweaker {
 
     private static float stepFor(int boneIdx) {
         if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return POS_STEP_UNIT;
+        if (boneIdx == SPIN_PIVOT_INDEX) return POS_STEP_UNIT;          // 0.05 unit
+        if (boneIdx == SPIN_AXIS_INDEX) return 0.1f;                    // 0.1 (向量分量)
+        if (boneIdx == SPIN_FREEZE_INDEX) return 0.05f;                 // 0.05 (spinT 0..1)
         if (boneIdx >= EF_FIRST_INDEX && boneIdx <= EF_LAST_INDEX) return 10.0f;
         return ROT_STEP_DEG;
     }
 
     private static String unitFor(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? " (unit)" : "°";
+        if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return " (unit)";
+        if (boneIdx == SPIN_PIVOT_INDEX) return " (unit)";
+        if (boneIdx == SPIN_AXIS_INDEX) return " (vec)";
+        if (boneIdx == SPIN_FREEZE_INDEX) return " (spinT)";
+        return "°";
     }
 
     private static void chatStatus() {
@@ -194,11 +290,17 @@ public final class BlockPoseTweaker {
     }
 
     private static String stepStr(int boneIdx) {
-        return (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) ? "0.05" : "5";
+        if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return "0.05";
+        if (boneIdx == SPIN_PIVOT_INDEX) return "0.05";
+        if (boneIdx == SPIN_AXIS_INDEX) return "0.1";
+        if (boneIdx == SPIN_FREEZE_INDEX) return "0.05";
+        return "5";
     }
 
     private static String fmt(float v, int boneIdx) {
         if (boneIdx == SWORD_POS_INDEX || boneIdx == BACK_POS_INDEX || boneIdx == HELD_POS_INDEX) return String.format("%.2f", v);
+        if (boneIdx == SPIN_PIVOT_INDEX || boneIdx == SPIN_FREEZE_INDEX) return String.format("%.2f", v);
+        if (boneIdx == SPIN_AXIS_INDEX) return String.format("%.1f", v);
         if (v == (int) v) return Integer.toString((int) v);
         return String.format("%.1f", v);
     }

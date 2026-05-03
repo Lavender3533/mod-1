@@ -85,6 +85,12 @@ public class CombatDefenseHandler {
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
             CombatState state = cap.getState();
 
+            // 受击打断检视
+            if (state == CombatState.INSPECT) {
+                CombatStateMachine.requestTransition(cap, CombatState.IDLE);
+                CombatCapabilityEvents.broadcastCombatState(player, cap);
+            }
+
             if (state == CombatState.DODGE && cap.getDodgeInvulnTicks() > 0) {
                 event.setAmount(0);
                 LOGGER.debug("DODGE i-frame: {} avoided damage", player.getName().getString());

@@ -59,6 +59,39 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
                 renderViaModelParts(poseStack);
             }
 
+            // 拔刀转刀: 关键帧驱动的 Euler XYZ 旋转。X 是主旋转轴 (0 → -325°)，Y/Z 在
+            // 特定 X 角度处插值，让旋转过程中剑动态偏向身体外侧避开砍身体。终点 Y/Z 回归 0
+            // 防止转刀结束后剑停在歪状态。spin_freeze 用于按 ; → draw_weapon 后静态停帧调试。
+            String debugAnim = BlockPoseTweaker.getDebugTargetAnim();
+            boolean inDraw = combatState == CombatState.DRAW_WEAPON;
+            boolean drawDebug = "draw_weapon".equals(debugAnim);
+            if (inDraw || drawDebug) {
+                float spinT = -1f;
+                if (drawDebug) {
+                    spinT = Math.max(0f, Math.min(1f, BlockPoseTweaker.getSpinFreeze()));
+                } else {
+                    int dur = CombatState.DRAW_WEAPON.getDurationTicks();
+                    int remaining = cap.getStateTimer();
+                    float partial = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+                    float progress = (dur - remaining + partial) / (float) dur;
+                    float spinStart = 0.30f, spinEnd = 0.95f;
+                    if (progress >= spinStart && progress <= spinEnd) {
+                        spinT = (progress - spinStart) / (spinEnd - spinStart);
+                    }
+                }
+                if (spinT >= 0f) {
+                    float xDeg = -325f * spinT;
+                    float yDeg = spinY(xDeg);
+                    float zDeg = spinZ(xDeg);
+                    org.joml.Quaternionf q = new org.joml.Quaternionf().rotationXYZ(
+                            (float) Math.toRadians(xDeg),
+                            (float) Math.toRadians(yDeg),
+                            (float) Math.toRadians(zDeg)
+                    );
+                    poseStack.mulPose(q);
+                }
+            }
+
             // Live tweaker overlay
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getHeldRot(0)));
             poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getHeldRot(1)));
@@ -118,5 +151,39 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
         if (mc.level == null) return null;
         Entity entity = mc.level.getEntity(state.id);
         return entity instanceof Player p ? p : null;
+    }
+
+    // Y 偏移曲线: 0 → -15 → -10 → 0 (sin/cos 三段，天然平滑无尖角)
+    //   [0,-100]: quarter-sin 爬升到 -15
+    //   [-100,-210]: quarter-sin 回收到 -10
+    //   [-210,-325]: quarter-cos 衰减到 0
+    private static float spinY(float xDeg) {
+        float ax = -xDeg;
+        if (ax <= 100f) {
+            return -15f * (float) Math.sin(ax / 100f * Math.PI * 0.5);
+        } else if (ax <= 210f) {
+            float t = (ax - 100f) / 110f;
+            return -15f + 5f * (float) Math.sin(t * Math.PI * 0.5);
+        } else {
+            float t = (ax - 210f) / 115f;
+            return -10f * (float) Math.cos(t * Math.PI * 0.5);
+        }
+    }
+
+    // Z 偏移曲线: 0 → -5 → -20 → 0 (同结构)
+    //   [0,-100]: quarter-sin 到 -5
+    //   [-100,-210]: quarter-sin 到 -20
+    //   [-210,-325]: quarter-cos 衰减到 0
+    private static float spinZ(float xDeg) {
+        float ax = -xDeg;
+        if (ax <= 100f) {
+            return -5f * (float) Math.sin(ax / 100f * Math.PI * 0.5);
+        } else if (ax <= 210f) {
+            float t = (ax - 100f) / 110f;
+            return -5f - 15f * (float) Math.sin(t * Math.PI * 0.5);
+        } else {
+            float t = (ax - 210f) / 115f;
+            return -20f * (float) Math.cos(t * Math.PI * 0.5);
+        }
     }
 }

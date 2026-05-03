@@ -117,6 +117,13 @@ public class CombatCapabilityEvents {
                         // 施力已在 packet handler 收到 DODGE 包时立即触发，这里只做粒子
                     }
                 }
+                // 闪避结束 → 立即清零水平速度，避免摩擦力衰减期间的滑步
+                if (prevState == CombatState.DODGE && cap.getState() != CombatState.DODGE) {
+                    Player p = event.player();
+                    net.minecraft.world.phys.Vec3 v = p.getDeltaMovement();
+                    p.setDeltaMovement(0, v.y, 0);
+                    p.hurtMarked = true;
+                }
 
                 // 蓄力中：周期 aura + 满蓄 ready 一次性反馈 + 移动减速(蹲下豁免)
                 if (cap.getState() == CombatState.ATTACK_HEAVY_CHARGING) {

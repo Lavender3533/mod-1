@@ -73,6 +73,16 @@ public class CombatKeyBindings {
             GLFW.GLFW_KEY_APOSTROPHE,      // '
             CATEGORY
     );
+    public static final KeyMapping POSE_CYCLE_TARGET = new KeyMapping(
+            "key." + CombatArts.MODID + ".pose_cycle_target",
+            GLFW.GLFW_KEY_SEMICOLON,       // ; — 切换调试冻结目标 anim
+            CATEGORY
+    );
+    public static final KeyMapping POSE_MOUSE_MODE = new KeyMapping(
+            "key." + CombatArts.MODID + ".pose_mouse_mode",
+            GLFW.GLFW_KEY_G,               // G — 打开鼠标拖动调参界面
+            CATEGORY
+    );
 
     public static void registerKeys(RegisterKeyMappingsEvent event) {
         event.register(COMBAT_TOGGLE);
@@ -86,5 +96,7 @@ public class CombatKeyBindings {
         event.register(POSE_INCREASE);
         event.register(POSE_PRINT);
         event.register(POSE_RESET_ALL);
+        event.register(POSE_CYCLE_TARGET);
+        event.register(POSE_MOUSE_MODE);
     }
 }

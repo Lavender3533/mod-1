@@ -91,14 +91,8 @@ public class CombatInputHandler {
     @SubscribeEvent
     public static void onMovementInput(net.minecraftforge.client.event.MovementInputUpdateEvent event) {
         if (!(event.getEntity() instanceof net.minecraft.client.player.LocalPlayer lp)) return;
-
-        CombatCapabilityEvents.getCombat(lp).ifPresent(cap -> {
-            CombatState s = cap.getState();
-            if (s == CombatState.ATTACK_LIGHT || s == CombatState.ATTACK_HEAVY) {
-                // 攻击执行中:缩放移动输入,避免边走边砍滑步、姿势不协调
-                event.getInput().moveVector = event.getInput().moveVector.scale(0.4f);
-            }
-        });
+        // 文档 6.5 允许"移动+攻击"混合 → 不锁攻击中的移动输入。
+        // 滑步问题改由 SkinnedMeshLayer.isAttack 上下半身分离解决(腿用 loco 踏步)。
     }
 
     @SubscribeEvent
@@ -111,9 +105,9 @@ public class CombatInputHandler {
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
 
-            // 检视打断：仅冲刺打断（慢走允许保持检视姿态），或动画播放完毕自动退出
+            // 检视打断：冲刺打断（慢走允许保持检视姿态）
             if (cap.getState() == CombatState.INSPECT) {
-                if (mc.player.isSprinting() || CombatAnimationController.isCurrentAnimFinished(mc.player)) {
+                if (mc.player.isSprinting()) {
                     requestWithPrediction(cap, CombatState.IDLE);
                 }
             }
@@ -197,7 +191,11 @@ public class CombatInputHandler {
 
         while (CombatKeyBindings.INSPECT.consumeClick()) {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
-                if (cap.isWeaponDrawn()) requestWithPrediction(cap, CombatState.INSPECT);
+                if (cap.getState() == CombatState.INSPECT) {
+                    requestWithPrediction(cap, CombatState.IDLE);
+                } else if (cap.isWeaponDrawn()) {
+                    requestWithPrediction(cap, CombatState.INSPECT);
+                }
             });
         }
 
@@ -215,6 +213,10 @@ public class CombatInputHandler {
         while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
         while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
         while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
+        while (CombatKeyBindings.POSE_CYCLE_TARGET.consumeClick()) BlockPoseTweaker.cycleDebugTarget();
+        while (CombatKeyBindings.POSE_MOUSE_MODE.consumeClick()) {
+            mc.setScreen(new org.example.combatarts.combat.client.PoseTweakerScreen());
+        }
     }
 
     private static void requestWithPrediction(ICombatCapability cap, CombatState target) {
@@ -318,6 +320,16 @@ public class CombatInputHandler {
                 || state == CombatState.DRAW_WEAPON
                 || state == CombatState.SHEATH_WEAPON
                 || sheathCameraGrace > 0;
+
+        // 玩家在拔刀状态下手动按 F5 切回第一人称 → 视为退出战斗，自动收刀。
+        // 仅在 IDLE / BLOCK 等"安全态"触发，避免攻击/检视/拔刀过程中误判。
+        // 必须放在 shouldBeThirdPerson 计算之后、camera 同步之前。
+        if (drawn && forcedThirdPerson
+                && mc.options.getCameraType() == CameraType.FIRST_PERSON
+                && (state == CombatState.IDLE || state == CombatState.BLOCK)) {
+            requestWithPrediction(cap, CombatState.SHEATH_WEAPON);
+            return;
+        }
 
         if (shouldBeThirdPerson && !forcedThirdPerson) {
             mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);

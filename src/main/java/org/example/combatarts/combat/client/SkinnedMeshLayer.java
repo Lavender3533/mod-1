@@ -79,6 +79,14 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         basePose.putJointData(name, jt.copy()));
             }
             targetPose = basePose;
+            // 蓄力调试时，先叠上当前 isHeavyCharge 烘焙的 tweak，让起点就是游戏里的实际姿势，
+            // 然后用户的 tweaker 偏移再叠在上面 → 直接微调，不用从零摸。
+            if ("sword_heavy_charge".equals(debugAnim)) {
+                applyTweakToJoint(targetPose, armature, "Shoulder_R",  20,  -10,  20);
+                applyTweakToJoint(targetPose, armature, "Arm_R",       40,  -60,   0);
+                applyTweakToJoint(targetPose, armature, "Hand_R",     -50,  -20, -10);
+                applyTweakToJoint(targetPose, armature, "Hand_L",      30,   20, -10);
+            }
             for (String jointName : BlockPoseTweaker.EF_BLOCK_JOINTS) {
                 applyTweakToJoint(targetPose, armature, jointName,
                         BlockPoseTweaker.getEfDelta(jointName, 0),
@@ -101,12 +109,33 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 if (drawArmJoints.contains(name))
                     targetPose.putJointData(name, jt.copy());
             });
+            // 拔刀转刀: 不在 Tool_R 这里改，而是在 CombatItemInHandLayer 通过 PoseStack 直接转剑模型，
+            //          配合 held_rot 的 Y/Z 偏移避免穿身/穿手臂。这里不再覆盖 Tool_R。
         } else if (isAttack) {
-            // Attacks/parry: full body from combat animation (EF-style).
-            // Movement is hard-slowed by SLOWNESS V during attacks (see CombatCapabilityEvents),
-            // so we don't need to blend in locomotion legs — sliding won't be visible.
+            // 上下半身分离：上半身用攻击动画(挥砍/突刺手感)，下半身用 locomotion，
+            // 让玩家能边走边砍 + 腿正常踏步(不再滑步)。冲刺攻击 (combo 99)
+            // 也走这条路，靠玩家原冲刺动量送出去。文档 6.5 要求"支持动画混合(移动+攻击)"。
             float combatTime = computeAnimTime(player, animName, state);
-            targetPose = MeshManager.getPoseAtTime(animName, combatTime);
+            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+            String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+            java.util.Set<String> legJoints = java.util.Set.of(
+                    "Thigh_R", "Leg_R", "Knee_R",
+                    "Thigh_L", "Leg_L", "Knee_L");
+
+            targetPose = new Pose();
+            // 1. 全身铺攻击动画(包括 Root/Torso 扭转 → 挥砍的力道感不能丢)
+            combatPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            // 2. 仅腿覆盖为 locomotion → 走/跑/idle 跟着踏步
+            locoPose.forEachEnabledTransforms((name, jt) -> {
+                if (legJoints.contains(name)) {
+                    targetPose.putJointData(name, jt.copy());
+                }
+            });
         } else if (isBlock) {
             // Block: hold pose. Arms from programmatic block, body/legs from locomotion
             // (player can stand still or slowly back up while blocking).
@@ -141,9 +170,9 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         BlockPoseTweaker.getEfDelta(jointName, 2));
             }
         } else if (isHeavyCharge) {
-            // 重击蓄力：身体/腿用 locomotion，上半身用 hold_longsword 当基础铺底，
-            // 然后用 sword_heavy_charge 程序化动画（MeshManager.createHeavyChargeAnimation）
-            // 覆盖右臂 3 个关节 — 这里的 Shoulder/Arm/Hand 数据才是"备砍后撤"的真正姿势。
+            // 重击蓄力：身体/腿用 locomotion，左臂用 hold_longsword 持刀基础，
+            // 右臂用 sword_heavy_charge 程序化数据（剑举到肩后/背后，准备劈下）。
+            // 数值在 MeshManager.createHeavyChargeAnimation —— 想微调直接改那里。
             String locoAnim = resolveLocomotion(player);
             activeLocoAnim = locoAnim;
             float locoTime = computeAnimTime(player, locoAnim, state);
@@ -162,7 +191,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     targetPose.putJointData(name, jt.copy());
                 }
             });
-            // 3. 双臂先铺 hold_longsword（提供左臂、Elbow、Tool 的合理基础），
+            // 3. 双臂铺 hold_longsword（左臂自然下垂 + 右臂打底）
             holdPose.forEachEnabledTransforms((name, jt) -> {
                 if (name.startsWith("Shoulder_") || name.startsWith("Arm_")
                         || name.startsWith("Hand_") || name.startsWith("Elbow_")
@@ -170,9 +199,22 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     targetPose.putJointData(name, jt.copy());
                 }
             });
-            // 4. 关键：用 sword_heavy_charge 的右臂关节真正覆盖（之前漏了这一步）
+            // 4. 用 sword_heavy_charge 的右臂关节覆盖（举剑过头）
             chargePose.forEachEnabledTransforms((name, jt) ->
                     targetPose.putJointData(name, jt.copy()));
+            // 5. 烘焙的精调值（用户 tweaker 调出的）：
+            //    剑往体侧外打开 + 肘前折 + 腕收 + 左手扶柄 → 真正的"备砍"体感
+            applyTweakToJoint(targetPose, armature, "Shoulder_R",  20,  -10,  20);
+            applyTweakToJoint(targetPose, armature, "Arm_R",       40,  -60,   0);
+            applyTweakToJoint(targetPose, armature, "Hand_R",     -50,  -20, -10);
+            applyTweakToJoint(targetPose, armature, "Hand_L",      30,   20, -10);
+            // 6. 实时 tweaker 偏移（调好后通常归零，留作以后再微调用）
+            for (String jointName : BlockPoseTweaker.EF_BLOCK_JOINTS) {
+                applyTweakToJoint(targetPose, armature, jointName,
+                        BlockPoseTweaker.getEfDelta(jointName, 0),
+                        BlockPoseTweaker.getEfDelta(jointName, 1),
+                        BlockPoseTweaker.getEfDelta(jointName, 2));
+            }
         } else if (isDodge) {
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
@@ -264,6 +306,12 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         }
 
         if (animName.contains("walk") || animName.contains("run") || animName.equals("sneak")) {
+            // 玩家不动时，walkAnimationPos 卡在上次走动的累积值，会让动画冻结在中间帧
+            // (sneak 表现为"右膝深屈左膝直"的起跑姿势)。stationary 时强制回 t=0 (loop 起始)
+            // 让姿态稳定。EF 走的是 playSpeed→0 路径，效果类似但起点同样不可控，所以我们直接锁死。
+            if (state.walkAnimationSpeed < 0.01f) {
+                return 0f;
+            }
             float walkPos = state.walkAnimationPos;
             float speed = animName.contains("run") ? 0.05f : 0.08f;
             if (animName.equals("sneak")) speed = 0.06f;
@@ -297,7 +345,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         default -> "sword_light_1";
                     };
                 }
-                case ATTACK_HEAVY -> result[0] = "sword_light_2";       // 重击释放复用 light_2 挥砍
+                case ATTACK_HEAVY -> result[0] = "sword_light_3";       // 重击释放复用 light_3 大幅劈砍(从蓄力举剑过头自然衔接)
                 case ATTACK_HEAVY_CHARGING -> result[0] = "sword_heavy_charge";   // 静态蓄力 hold
                 case DODGE -> result[0] = "dodge";
                 case BLOCK -> result[0] = "block";

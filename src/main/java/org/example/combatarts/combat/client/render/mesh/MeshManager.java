@@ -70,8 +70,11 @@ public final class MeshManager {
             loadEFAnimation("sword_dash", "animations/biped/combat/sword_dash.json");
             loadEFAnimation("dodge", "animations/biped/combat/step_backward.json");
             createBlockAnimation();        // 程序化格挡姿势(替换 EF guard_sword)
-            createHeavyChargeAnimation();  // 程序化重击蓄力 hold(右手微微后撤)
+            // 重击蓄力 hold：取自 EF steel_whirlwind_charging.json t=0 帧的右臂 5 关节，
+            // 静态保持。比手写 Euler 准确（坐标系自动转换）。
+            loadEFAnimation("sword_heavy_charge", "animations/biped/combat/sword_heavy_charge.json");
             loadEFAnimation("parry", "animations/biped/combat/guard_sword_hit.json");
+            loadEFAnimation("inspect", "animations/biped/combat/inspect.json");
             LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
             LOGGER.error("[MeshManager] Failed to load biped model", e);
@@ -401,11 +404,17 @@ public final class MeshManager {
             {1.20f,   12.8f,    0.0f,    0.0f},   // 持续保持(转刀期间手腕不动)
         }));
 
-        // 转刀(调试版): Tool_R 整段持续 90° X 旋转。如果剑从拔刀第一瞬间就明显歪着 → 路径生效;
-        // 如果剑姿势完全正常没歪 → Tool_R 动画根本没被应用,需要查别的渲染路径。
+        // 拔刀转刀: Tool_R 在握刀稳定后(t=0.55)绕 X 轴转一整圈到 t=0.85,然后保持。
+        // NLERP 走最短弧,所以必须用 5 段 ≤90° 的中间帧强制完整旋转(否则会被识别为
+        // 没旋转/反转最短)。450° 在四元数等价 90°(初始持刀朝向),视觉无缝衔接。
         sheets.put("Tool_R", sheet(new float[][] {
-            {0.00f,   90.0f,   0.0f,    0.0f},
-            {1.20f,   90.0f,   0.0f,    0.0f},
+            {0.00f,   90.0f,    0.0f,    0.0f},   // 鞘内(不可见)
+            {0.55f,   90.0f,    0.0f,    0.0f},   // 握住,准备转刀
+            {0.625f, 180.0f,    0.0f,    0.0f},   // 转 1/4
+            {0.70f,  270.0f,    0.0f,    0.0f},   // 转 1/2
+            {0.775f, 360.0f,    0.0f,    0.0f},   // 转 3/4
+            {0.85f,  450.0f,    0.0f,    0.0f},   // 转一整圈完成 (= 90° 视觉同初始)
+            {1.20f,  450.0f,    0.0f,    0.0f},   // 持续保持
         }));
 
         loadedAnims.put("draw_weapon", sheets);
@@ -481,31 +490,6 @@ public final class MeshManager {
 
         loadedAnims.put("block", sheets);
         LOGGER.info("[MeshManager] Created programmatic block animation (baked from 6ff555b)");
-    }
-
-    /**
-     * 程序化重击蓄力姿势:右手向后微撤准备挥砍。静态 hold,左手不动。
-     * 蓄力是无限时长的 held state(玩家长按 F),所以是静态姿势,不是 timed 动画。
-     */
-    private static void createHeavyChargeAnimation() {
-        Map<String, TransformSheet> sheets = Maps.newHashMap();
-
-        // 右手后撤备砍:肩稍抬+外旋后展、肘明显弯曲到位
-        sheets.put("Shoulder_R", sheet(new float[][] {
-            {0.0f,  30.0f,   25.0f,   0.0f},
-            {1.0f,  30.0f,   25.0f,   0.0f},
-        }));
-        sheets.put("Arm_R", sheet(new float[][] {
-            {0.0f, -60.0f,    0.0f,   0.0f},   // 弯肘
-            {1.0f, -60.0f,    0.0f,   0.0f},
-        }));
-        sheets.put("Hand_R", sheet(new float[][] {
-            {0.0f,   0.0f,    0.0f,   0.0f},
-            {1.0f,   0.0f,    0.0f,   0.0f},
-        }));
-
-        loadedAnims.put("sword_heavy_charge", sheets);
-        LOGGER.info("[MeshManager] Created programmatic heavy charge animation");
     }
 }
 
