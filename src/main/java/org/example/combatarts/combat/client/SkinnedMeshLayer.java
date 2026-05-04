@@ -23,14 +23,22 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     private static final float TRANSITION_DURATION = 0.15f;
     private static final float COMBAT_TRANSITION_DURATION = 0.12f;
 
-    private String prevAnimName = "idle";
-    private String prevLocoAnim = "idle";
-    private Pose prevPose = new Pose();
-    private float transitionTimer = 0f;
-    private float currentTransitionDuration = TRANSITION_DURATION;
-    private long lastFrameTime = 0;
+    // 按玩家 ID 存过渡状态，避免多玩家共用单例 renderer 时互相污染
+    private static final java.util.Map<Integer, PlayerAnimState> perPlayerState = new java.util.HashMap<>();
 
-    private CombatState lastCombatState = CombatState.IDLE;
+    private static class PlayerAnimState {
+        String prevAnimName = "idle";
+        String prevLocoAnim = "idle";
+        Pose prevPose = new Pose();
+        float transitionTimer = 0f;
+        float currentTransitionDuration = TRANSITION_DURATION;
+        long lastFrameTime = 0;
+        CombatState lastCombatState = CombatState.IDLE;
+    }
+
+    private static PlayerAnimState getState(int entityId) {
+        return perPlayerState.computeIfAbsent(entityId, k -> new PlayerAnimState());
+    }
 
     public SkinnedMeshLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent) {
         super(parent);
@@ -256,38 +264,37 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             targetPose = MeshManager.getPoseAtTime(animName, animTime);
         }
 
-        // Transition blending
+        // Transition blending (per-player state)
+        PlayerAnimState ps = getState(state.id);
         long now = System.nanoTime();
-        float dt = lastFrameTime == 0 ? 0.016f : (now - lastFrameTime) / 1_000_000_000f;
-        lastFrameTime = now;
+        float dt = ps.lastFrameTime == 0 ? 0.016f : (now - ps.lastFrameTime) / 1_000_000_000f;
+        ps.lastFrameTime = now;
         dt = Math.min(dt, 0.1f);
 
-        if (!animName.equals(prevAnimName)) {
-            currentTransitionDuration = isTimedAnimation(animName) || isTimedAnimation(prevAnimName)
+        if (!animName.equals(ps.prevAnimName)) {
+            ps.currentTransitionDuration = isTimedAnimation(animName) || isTimedAnimation(ps.prevAnimName)
                     ? COMBAT_TRANSITION_DURATION : TRANSITION_DURATION;
-            prevAnimName = animName;
-            transitionTimer = currentTransitionDuration;
-        } else if (activeLocoAnim != null && !activeLocoAnim.equals(prevLocoAnim)) {
-            // 顶层 anim 不变（如蓄力/格挡保持），但 locomotion 子动画切换时
-            // 也需要插值，否则腿部姿势会瞬间 snap → 抽动。用稍长的过渡使切换更平滑。
-            currentTransitionDuration = TRANSITION_DURATION;
-            transitionTimer = currentTransitionDuration;
+            ps.prevAnimName = animName;
+            ps.transitionTimer = ps.currentTransitionDuration;
+        } else if (activeLocoAnim != null && !activeLocoAnim.equals(ps.prevLocoAnim)) {
+            ps.currentTransitionDuration = TRANSITION_DURATION;
+            ps.transitionTimer = ps.currentTransitionDuration;
         }
-        if (activeLocoAnim != null) prevLocoAnim = activeLocoAnim;
+        if (activeLocoAnim != null) ps.prevLocoAnim = activeLocoAnim;
 
         Pose finalPose;
-        if (transitionTimer > 0) {
-            transitionTimer -= dt;
-            float alpha = 1.0f - Math.max(0, transitionTimer) / currentTransitionDuration;
+        if (ps.transitionTimer > 0) {
+            ps.transitionTimer -= dt;
+            float alpha = 1.0f - Math.max(0, ps.transitionTimer) / ps.currentTransitionDuration;
             alpha = alpha * alpha * (3 - 2 * alpha);
-            finalPose = Pose.interpolatePose(prevPose, targetPose, alpha);
+            finalPose = Pose.interpolatePose(ps.prevPose, targetPose, alpha);
         } else {
             finalPose = targetPose;
         }
 
-        prevPose = new Pose();
+        ps.prevPose = new Pose();
         finalPose.forEachEnabledTransforms((name, jt) ->
-            prevPose.putJointData(name, jt.copy()));
+            ps.prevPose.putJointData(name, jt.copy()));
 
         // Head rotation tracking
         if (player != null && finalPose.hasTransform("Head")) {
@@ -363,7 +370,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         combatOpt.ifPresent(cap -> {
             CombatState state = cap.getState();
-            lastCombatState = state;
+            getState(player.getId()).lastCombatState = state;
 
             switch (state) {
                 case DRAW_WEAPON -> result[0] = "draw_weapon";

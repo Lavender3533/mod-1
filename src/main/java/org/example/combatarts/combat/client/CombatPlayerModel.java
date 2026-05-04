@@ -3,6 +3,7 @@ package org.example.combatarts.combat.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import net.minecraft.client.Minecraft;
+import org.example.combatarts.combat.client.render.mesh.MeshManager;
 import net.minecraft.client.model.ArmedModel;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.HeadedModel;
@@ -295,6 +296,11 @@ public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
             CombatAnimationController.applyTo17Bones(this.boneMap, state);
         } else {
             applyVanillaFallback(state);
+        }
+
+        // EF 蒙皮模型激活时隐藏 box model，防止两套模型 Z-fighting 闪烁
+        if (MeshManager.getMesh() != null) {
+            this.root.visible = false;
         }
 
         // Crouch sink — animation rotates legs into squat, but pivots are fixed.
