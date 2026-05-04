@@ -46,22 +46,33 @@ public class CombatCapeLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         OpenMatrix4f chestMatrix = armature.getPoseMatrices()[chestJoint.getId()];
 
         cape.resetPose();
+        // 抵消 PartPose 自带的 PI Y rotation —— X 180° on PoseStack 会翻转局部 Z 方向
+        // cape 几何体外面默认朝 -Z, PI Y 把它转到 +Z (vanilla 背后)
+        // 但 X 180° 又把 +Z 翻回 -Z (变成正前方) => 从背后看到内面
+        // 移除 PartPose 的 Y 旋转, 让外面保持朝 -Z, X 180° 翻转后正好朝 +Z = 背后
+        cape.yRot = 0f;
         final float DEG_TO_RAD = 0.017453292F;
+
+        // 披风物理摆动 (取反匹配 X180 翻转后的方向)
         Quaternionf q = new Quaternionf()
-                .rotateY(-(float) Math.PI)
-                .rotateX((6.0F + state.capeLean / 2.0F + state.capeFlap) * DEG_TO_RAD)
-                .rotateZ(state.capeLean2 / 2.0F * DEG_TO_RAD)
-                .rotateY((180.0F - state.capeLean2 / 2.0F) * DEG_TO_RAD);
+                .rotateX(-(6.0F + state.capeLean / 2.0F + state.capeFlap) * DEG_TO_RAD)
+                .rotateZ(-state.capeLean2 / 2.0F * DEG_TO_RAD);
         cape.rotateBy(q);
 
         poseStack.pushPose();
+        // 和 SkinnedMeshLayer 一样的基准变换
         poseStack.scale(-1.0F, -1.0F, 1.0F);
         poseStack.translate(0.0, -1.501, 0.0);
+        // Chest 关节世界空间矩阵
         MathUtils.mulStack(poseStack, chestMatrix);
-        poseStack.translate(0.0, 0.25, 0.06);
+        // X 180° 让披风从顶部翻到背后垂下
+        poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(180f));
+        // Z 偏移: -0.18 在身体里, -0.30 太远, 取 -0.27
+        poseStack.translate(0.0, -0.15, -0.27);
 
+        // 双面渲染: X180 翻转了法线方向, noCull 让两面都可见
         collector.submitModelPart(cape, poseStack,
-                RenderTypes.entitySolid(capeTex),
+                RenderTypes.entityCutoutNoCull(capeTex),
                 packedLight, OverlayTexture.NO_OVERLAY, null);
         poseStack.popPose();
     }
