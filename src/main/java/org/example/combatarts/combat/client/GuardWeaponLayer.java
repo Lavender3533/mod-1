@@ -22,7 +22,6 @@ import org.joml.Quaternionf;
 public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
     private final ItemModelResolver itemModelResolver;
-    private final ItemStackRenderState scratchState = new ItemStackRenderState();
 
     public GuardWeaponLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent,
                             ItemModelResolver itemModelResolver) {
@@ -50,6 +49,7 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             ItemStack stack = player.getMainHandItem();
             if (stack.isEmpty()) return;
 
+            ItemStackRenderState scratchState = new ItemStackRenderState();
             itemModelResolver.updateForLiving(scratchState, stack, ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, player);
             if (scratchState.isEmpty()) return;
 

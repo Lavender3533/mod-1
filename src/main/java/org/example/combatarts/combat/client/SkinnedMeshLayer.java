@@ -34,6 +34,9 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         float currentTransitionDuration = TRANSITION_DURATION;
         long lastFrameTime = 0;
         CombatState lastCombatState = CombatState.IDLE;
+        // 动画计时：用墙钟时间推进，不依赖 stateTimer（远程玩家 timer 不 tick）
+        String timedAnimName = "";
+        long timedAnimStartNano = 0;
     }
 
     private static PlayerAnimState getState(int entityId) {
@@ -336,12 +339,16 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
-        // Timed combat animations — sync to state timer
-        if (isTimedAnimation(animName) && player != null) {
-            float elapsed = getTimedAnimElapsed(player, partialTick);
-            if (elapsed >= 0) {
-                return Math.min(elapsed, animLength);
+        // Timed combat animations — 用墙钟时间推进，不依赖 stateTimer
+        // stateTimer 在远程玩家上不 tick，会导致动画冻住 + sync 包到达时跳变("卡带")
+        if (isTimedAnimation(animName)) {
+            PlayerAnimState ps = getState(state.id);
+            if (!animName.equals(ps.timedAnimName)) {
+                ps.timedAnimName = animName;
+                ps.timedAnimStartNano = System.nanoTime();
             }
+            float elapsed = (System.nanoTime() - ps.timedAnimStartNano) / 1_000_000_000f;
+            return Math.min(elapsed, animLength);
         }
 
         if (animName.contains("walk") || animName.contains("run") || animName.equals("sneak")) {

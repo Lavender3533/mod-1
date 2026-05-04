@@ -21,7 +21,6 @@ import org.example.combatarts.combat.client.render.mesh.*;
 public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
     private final ItemModelResolver itemModelResolver;
-    private final ItemStackRenderState scratchState = new ItemStackRenderState();
 
     public BackWeaponLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent,
                            ItemModelResolver itemModelResolver) {
@@ -49,6 +48,7 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         Armature armature = MeshManager.getArmature();
         boolean useArmature = armature != null && MeshManager.getMesh() != null && armature.hasJoint("Chest");
 
+        ItemStackRenderState scratchState = new ItemStackRenderState();
         itemModelResolver.updateForLiving(scratchState, stack,
                 useArmature ? ItemDisplayContext.THIRD_PERSON_RIGHT_HAND : ItemDisplayContext.FIXED,
                 player);

@@ -20,7 +20,6 @@ import org.example.combatarts.combat.client.render.mesh.*;
 public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
     private final ItemModelResolver itemModelResolver;
-    private final ItemStackRenderState scratchState = new ItemStackRenderState();
 
     public CombatItemInHandLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent,
                                  ItemModelResolver itemModelResolver) {
@@ -46,6 +45,7 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
             ItemStack stack = player.getMainHandItem();
             if (stack.isEmpty()) return;
 
+            ItemStackRenderState scratchState = new ItemStackRenderState();
             itemModelResolver.updateForLiving(scratchState, stack,
                     ItemDisplayContext.THIRD_PERSON_RIGHT_HAND, player);
             if (scratchState.isEmpty()) return;

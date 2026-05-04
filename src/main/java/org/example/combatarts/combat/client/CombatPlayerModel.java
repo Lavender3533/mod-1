@@ -298,11 +298,6 @@ public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
             applyVanillaFallback(state);
         }
 
-        // EF 蒙皮模型激活时隐藏 box model，防止两套模型 Z-fighting 闪烁
-        if (MeshManager.getMesh() != null) {
-            this.root.visible = false;
-        }
-
         // Crouch sink — animation rotates legs into squat, but pivots are fixed.
         // MC model coords: +Y is downward, so increasing hip.y lowers the body visually.
         if (state.isCrouching) {
