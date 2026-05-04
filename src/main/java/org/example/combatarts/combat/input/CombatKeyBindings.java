@@ -5,6 +5,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.resources.Identifier;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import org.example.combatarts.CombatArts;
+import org.example.combatarts.Config;
 import org.lwjgl.glfw.GLFW;
 
 public class CombatKeyBindings {

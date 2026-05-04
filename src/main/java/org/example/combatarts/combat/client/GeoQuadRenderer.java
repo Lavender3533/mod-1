@@ -215,7 +215,7 @@ public class GeoQuadRenderer {
             // Replace polygon with new one (simple constructor, no UV remapping)
             cube.polygons[pi] = new ModelPart.Polygon(newVerts, polygon.normal());
 
-            LOGGER.info("Fixed {} face using {} UV: u={}-{}, v={}-{}", actualDir, uvDir,
+            LOGGER.debug("Fixed {} face using {} UV: u={}-{}, v={}-{}", actualDir, uvDir,
                     String.format("%.0f", faceUV[0]), String.format("%.0f", faceUV[0]+faceUV[2]),
                     String.format("%.0f", faceUV[1]), String.format("%.0f", faceUV[1]+faceUV[3]));
         }

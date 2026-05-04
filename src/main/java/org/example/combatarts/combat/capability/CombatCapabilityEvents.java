@@ -62,6 +62,16 @@ public class CombatCapabilityEvents {
     }
 
     @SubscribeEvent
+    public static void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
+        getCombat(event.getEntity()).ifPresent(cap -> {
+            cap.setState(CombatState.IDLE);
+            cap.setStateTimer(0);
+            cap.setWeaponDrawn(false);
+            cap.resetCombo();
+        });
+    }
+
+    @SubscribeEvent
     public static void onPlayerClone(PlayerEvent.Clone event) {
         Player original = event.getOriginal();
         Player newPlayer = event.getEntity();

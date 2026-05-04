@@ -98,52 +98,60 @@ public class CombatInputHandler {
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null || mc.screen != null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        handleKeyBindings(mc);
+        boolean uiOpen = mc.screen != null;
+
+        // 输入处理: 仅在无 GUI 时
+        if (!uiOpen) {
+            handleKeyBindings(mc);
+        }
 
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
+            // 状态机始终 tick — 否则打开物品栏/ESC 期间攻击动画冻结在当前帧
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
 
-            // 检视打断：冲刺打断（慢走允许保持检视姿态）
-            if (cap.getState() == CombatState.INSPECT) {
-                if (mc.player.isSprinting()) {
-                    requestWithPrediction(cap, CombatState.IDLE);
-                }
-            }
-
-            updateCamera(cap);
-
-            handleHeavyChargeKey(cap);
-
-            // 右键按住进入 BLOCK（达到 hold threshold 后），松开退出。重击改用 F 键蓄力。
-            if (cap.isWeaponDrawn()) {
-                if (rightMousePressed) {
-                    blockHoldTicks++;
-                    if (blockHoldTicks > Config.blockHoldThresholdTicks && cap.getState() != CombatState.BLOCK) {
-                        requestWithPrediction(cap, CombatState.BLOCK);
+            if (!uiOpen) {
+                if (cap.getState() == CombatState.INSPECT) {
+                    if (mc.player.isSprinting()) {
+                        requestWithPrediction(cap, CombatState.IDLE);
                     }
                 }
+
+                updateCamera(cap);
+                handleHeavyChargeKey(cap);
+
+                if (cap.isWeaponDrawn()) {
+                    if (rightMousePressed) {
+                        blockHoldTicks++;
+                        if (blockHoldTicks > Config.blockHoldThresholdTicks && cap.getState() != CombatState.BLOCK) {
+                            requestWithPrediction(cap, CombatState.BLOCK);
+                        }
+                    }
+                } else {
+                    rightMousePressed = false;
+                    blockHoldTicks = 0;
+                    heavyKeyDown = false;
+                    heavyChargeTicks = 0;
+                }
             } else {
+                // GUI 打开时清除挂起的输入状态，防止关闭 GUI 后鬼畜触发
                 rightMousePressed = false;
                 blockHoldTicks = 0;
                 heavyKeyDown = false;
                 heavyChargeTicks = 0;
             }
 
-            // Update animation (after all state transitions)
+            // 动画始终更新
             if (mc.player instanceof AbstractClientPlayer clientPlayer) {
                 CombatAnimationController.updateAnimation(clientPlayer, cap);
             }
         });
 
+        // 远端玩家动画始终更新（不受本地 GUI 影响）
         for (var player : mc.level.players()) {
             if (player == mc.player) continue;
             CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
-                // 远端玩家不跑 state machine — state/stateTimer/combo 全由 CombatSyncPacket 写入。
-                // 之前在这里跑 CombatStateMachine.tick 会让本地 timer 独立倒数, 跟服务端 sync 不同步:
-                // 比如疯狂连击时, 本地 timer 提前到 0 把 state 过期成 IDLE, 紧接着 sync 包来了又拉回 ATTACK_LIGHT,
-                // 动画就在攻击/待战之间抽搐一下。
                 if (player instanceof AbstractClientPlayer clientPlayer) {
                     CombatAnimationController.updateAnimation(clientPlayer, cap);
                 }

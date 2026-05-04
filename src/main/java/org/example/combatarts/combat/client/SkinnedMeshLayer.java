@@ -246,18 +246,21 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 }
             });
 
-            // 两段检视动画: A(看刃面) → B(换角度) → 收回，值用 applyTweakToJoint 乘到 hold 上
+            // 检视转刀: Hand_R 做主旋转，肩/肘小幅配合
             float partial = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
             float gameTime = (float)(Minecraft.getInstance().level != null ?
                     Minecraft.getInstance().level.getGameTime() : 0) + partial;
-            float t = (gameTime * 0.05f) % 4.0f;
+            float spinT = (gameTime / 15.0f) % 1.0f; // 0.75 秒一圈
+            float spinDeg = -360f * spinT;
+            float wave = (float) Math.sin(spinT * Math.PI);
+            float wave2 = (float) Math.sin(spinT * 2 * Math.PI);
 
-            applyInspectPhase(targetPose, armature, t, "Shoulder_R",  30,0,0,     60,-10,-10);
-            applyInspectPhase(targetPose, armature, t, "Arm_R",       0,0,0,      0,10,-10);
-            applyInspectPhase(targetPose, armature, t, "Hand_R",      30,0,20,    0,0,40);
-            applyInspectPhase(targetPose, armature, t, "Shoulder_L",  40,-10,0,   0,-10,-10);
-            applyInspectPhase(targetPose, armature, t, "Arm_L",       0,0,0,      -10,-10,0);
-            applyInspectPhase(targetPose, armature, t, "Hand_L",      50,-20,-30, 0,0,0);
+            applyTweakToJoint(targetPose, armature, "Shoulder_R",
+                    40 + 5f * wave, -8f * wave2, 0);
+            applyTweakToJoint(targetPose, armature, "Arm_R",
+                    10 + 8f * wave, 5f * wave2, 8f * wave);
+            applyTweakToJoint(targetPose, armature, "Hand_R",
+                    50, spinDeg, 70);
         } else if (isDodge) {
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
@@ -451,6 +454,24 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         return animName != null && !animName.contains("idle") && !animName.contains("walk")
                 && !animName.contains("run") && !animName.equals("sneak")
                 && !animName.equals("hold_longsword");
+    }
+
+    // 检视转刀关键帧插值: 给定 t(0→1) 和 {t, rx, ry, rz}[] 关键帧，smoothstep 插值后 applyTweakToJoint
+    private static void applySpinKeys(Pose pose, Armature armature, float t,
+            String joint, float[][] keys) {
+        int seg = 0;
+        for (int i = 1; i < keys.length; i++) {
+            if (t < keys[i][0]) { seg = i - 1; break; }
+        }
+        float s = keys[seg][0], e = keys[seg + 1][0];
+        float a = (e > s) ? (t - s) / (e - s) : 0f;
+        a = a * a * (3f - 2f * a);
+        float rx = keys[seg][1] + (keys[seg + 1][1] - keys[seg][1]) * a;
+        float ry = keys[seg][2] + (keys[seg + 1][2] - keys[seg][2]) * a;
+        float rz = keys[seg][3] + (keys[seg + 1][3] - keys[seg][3]) * a;
+        if (rx != 0 || ry != 0 || rz != 0) {
+            applyTweakToJoint(pose, armature, joint, rx, ry, rz);
+        }
     }
 
     // 两段检视插值: 0→0.4 过渡到A, 0.4→1.4 保持A, 1.4→2.0 过渡到B, 2.0→3.0 保持B, 3.0→3.7 收回

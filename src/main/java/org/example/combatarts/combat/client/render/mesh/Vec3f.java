@@ -236,8 +236,7 @@ public class Vec3f extends Vec2f {
 		float dotDivLength = Vec3f.dot(a, b) / (a.length() * b.length());
 
 		if (!Float.isFinite(dotDivLength)) {
-			LOGGER.info("Warning : given vector's length is zero");
-			(new IllegalArgumentException()).printStackTrace();
+			LOGGER.debug("getRotatorBetween: zero-length input vector, defaulting to identity rotation");
 			dotDivLength = 1.0F;
 		}
 

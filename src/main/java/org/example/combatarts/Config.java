@@ -45,6 +45,9 @@ public class Config {
     static final ForgeConfigSpec.IntValue HEAVY_CHARGE_MAX_TICKS;
     static final ForgeConfigSpec.DoubleValue HEAVY_CHARGE_MAX_MULT;
 
+    // ===== Dev / debug =====
+    static final ForgeConfigSpec.BooleanValue DEV_MODE;
+
     static {
         BUILDER.comment("Combat system settings").push("combat");
 
@@ -125,6 +128,13 @@ public class Config {
         BUILDER.pop();
 
         BUILDER.pop(); // combat
+
+        BUILDER.comment("Developer / debug tooling — leave off for normal play").push("dev");
+        DEV_MODE = BUILDER.comment(
+                "Enable in-game pose-tweaker GUI, animation hot-reload (F10), and bracket/comma/period pose-edit hotkeys.",
+                "Off by default; flip to true if you need to retune animations or骨骼姿势 in-world.")
+                .define("devMode", false);
+        BUILDER.pop();
     }
 
     static final ForgeConfigSpec SPEC = BUILDER.build();
@@ -159,6 +169,7 @@ public class Config {
     public static int parryWindowTicks;
     public static int heavyChargeMaxTicks;
     public static double heavyChargeMaxMult;
+    public static boolean devMode;
 
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event) {
@@ -192,5 +203,6 @@ public class Config {
         parryWindowTicks = PARRY_WINDOW_TICKS.get();
         heavyChargeMaxTicks = HEAVY_CHARGE_MAX_TICKS.get();
         heavyChargeMaxMult = HEAVY_CHARGE_MAX_MULT.get();
+        devMode = DEV_MODE.get();
     }
 }

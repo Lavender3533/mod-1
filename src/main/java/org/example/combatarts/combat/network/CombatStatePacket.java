@@ -127,8 +127,11 @@ public class CombatStatePacket {
                 CombatCapabilityEvents.applyDodgeImpulse(player, msg.moveX, msg.moveZ);
             }
 
-            // Play sound on successful state transition
-            if (cap.getState() != prevState || cap.getState() == CombatState.ATTACK_LIGHT) {
+            // Play sound on actual state transitions only.
+            // 不要在 ATTACK_LIGHT 同状态点击时重复触发: 那种点击多半被 requestTransition 当作
+            // queuedLightAttack 排队, 没有真正推进 combo, 但旧实现会按"每次点击响一声"播放, 表现为
+            // 连点左键音效翻倍。combo 推进时的音效由 server tick handler 监测 prevComboCount 变化触发。
+            if (cap.getState() != prevState) {
                 CombatSoundPlayer.playStateSound(player, cap.getState(), cap.getWeaponType(), cap.getComboCount());
             }
 
