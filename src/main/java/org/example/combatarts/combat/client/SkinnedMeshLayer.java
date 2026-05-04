@@ -54,6 +54,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         boolean isDrawSheath = "draw_weapon".equals(animName) || "sheath_weapon".equals(animName);
         boolean isBlock = "block".equals(animName);
+        boolean isInspect = "inspect".equals(animName);
         boolean isHeavyCharge = "sword_heavy_charge".equals(animName);
         boolean isAttack = java.util.Set.of(
                 "sword_light_1", "sword_light_2", "sword_light_3", "sword_dash",
@@ -215,6 +216,37 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         BlockPoseTweaker.getEfDelta(jointName, 1),
                         BlockPoseTweaker.getEfDelta(jointName, 2));
             }
+        } else if (isInspect) {
+            String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+            Pose holdPose = MeshManager.getPoseAtTime("hold_longsword", 0f);
+
+            targetPose = new Pose();
+            locoPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            holdPose.forEachEnabledTransforms((name, jt) -> {
+                if (name.startsWith("Shoulder_") || name.startsWith("Arm_")
+                        || name.startsWith("Hand_") || name.startsWith("Elbow_")
+                        || name.startsWith("Tool_")
+                        || name.equals("Torso") || name.equals("Chest") || name.equals("Head")) {
+                    targetPose.putJointData(name, jt.copy());
+                }
+            });
+
+            // 两段检视动画: A(看刃面) → B(换角度) → 收回，值用 applyTweakToJoint 乘到 hold 上
+            float partial = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+            float gameTime = (float)(Minecraft.getInstance().level != null ?
+                    Minecraft.getInstance().level.getGameTime() : 0) + partial;
+            float t = (gameTime * 0.05f) % 4.0f;
+
+            applyInspectPhase(targetPose, armature, t, "Shoulder_R",  30,0,0,     60,-10,-10);
+            applyInspectPhase(targetPose, armature, t, "Arm_R",       0,0,0,      0,10,-10);
+            applyInspectPhase(targetPose, armature, t, "Hand_R",      30,0,20,    0,0,40);
+            applyInspectPhase(targetPose, armature, t, "Shoulder_L",  40,-10,0,   0,-10,-10);
+            applyInspectPhase(targetPose, armature, t, "Arm_L",       0,0,0,      -10,-10,0);
+            applyInspectPhase(targetPose, armature, t, "Hand_L",      50,-20,-30, 0,0,0);
         } else if (isDodge) {
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
@@ -350,6 +382,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 case DODGE -> result[0] = "dodge";
                 case BLOCK -> result[0] = "block";
                 case PARRY -> result[0] = "parry";
+                case INSPECT -> result[0] = "inspect";
                 default -> {}
             }
         });
@@ -404,6 +437,33 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         return animName != null && !animName.contains("idle") && !animName.contains("walk")
                 && !animName.contains("run") && !animName.equals("sneak")
                 && !animName.equals("hold_longsword");
+    }
+
+    // 两段检视插值: 0→0.4 过渡到A, 0.4→1.4 保持A, 1.4→2.0 过渡到B, 2.0→3.0 保持B, 3.0→3.7 收回
+    private static void applyInspectPhase(Pose pose, Armature armature, float t,
+            String joint,
+            float ax, float ay, float az,
+            float bx, float by, float bz) {
+        float rx, ry, rz;
+        if (t < 0.4f) {
+            float a = t / 0.4f;
+            rx = ax * a; ry = ay * a; rz = az * a;
+        } else if (t < 1.4f) {
+            rx = ax; ry = ay; rz = az;
+        } else if (t < 2.0f) {
+            float a = (t - 1.4f) / 0.6f;
+            rx = ax + (bx - ax) * a; ry = ay + (by - ay) * a; rz = az + (bz - az) * a;
+        } else if (t < 3.0f) {
+            rx = bx; ry = by; rz = bz;
+        } else if (t < 3.7f) {
+            float a = (t - 3.0f) / 0.7f;
+            rx = bx * (1 - a); ry = by * (1 - a); rz = bz * (1 - a);
+        } else {
+            rx = 0; ry = 0; rz = 0;
+        }
+        if (rx != 0 || ry != 0 || rz != 0) {
+            applyTweakToJoint(pose, armature, joint, rx, ry, rz);
+        }
     }
 
     @SuppressWarnings("unused")

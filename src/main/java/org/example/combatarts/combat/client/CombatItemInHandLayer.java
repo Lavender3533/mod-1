@@ -92,6 +92,38 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
                 }
             }
 
+            // 检视时剑旋转: 跟 inspect 动画同步，两段不同角度
+            // A(0.4-1.4): held_rot (25, 0, 35), B(2.0-3.0): held_rot (35, 10, 15)
+            if (combatState == CombatState.INSPECT) {
+                float partial = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+                float gameTime = (float)(Minecraft.getInstance().level != null ?
+                        Minecraft.getInstance().level.getGameTime() : 0) + partial;
+                float t = (gameTime * 0.05f) % 4.0f;
+
+                float rx, ry, rz;
+                if (t < 0.4f) {
+                    float a = t / 0.4f;
+                    rx = 25f * a; ry = 0f; rz = 35f * a;
+                } else if (t < 1.4f) {
+                    rx = 25f; ry = 0f; rz = 35f;
+                } else if (t < 2.0f) {
+                    float a = (t - 1.4f) / 0.6f;
+                    rx = 25f + (35f - 25f) * a;
+                    ry = 10f * a;
+                    rz = 35f + (15f - 35f) * a;
+                } else if (t < 3.0f) {
+                    rx = 35f; ry = 10f; rz = 15f;
+                } else if (t < 3.7f) {
+                    float a = (t - 3.0f) / 0.7f;
+                    rx = 35f * (1f - a); ry = 10f * (1f - a); rz = 15f * (1f - a);
+                } else {
+                    rx = 0f; ry = 0f; rz = 0f;
+                }
+                poseStack.mulPose(Axis.XP.rotationDegrees(rx));
+                poseStack.mulPose(Axis.YP.rotationDegrees(ry));
+                poseStack.mulPose(Axis.ZP.rotationDegrees(rz));
+            }
+
             // Live tweaker overlay
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getHeldRot(0)));
             poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getHeldRot(1)));

@@ -70,11 +70,11 @@ public final class MeshManager {
             loadEFAnimation("sword_dash", "animations/biped/combat/sword_dash.json");
             loadEFAnimation("dodge", "animations/biped/combat/step_backward.json");
             createBlockAnimation();        // 程序化格挡姿势(替换 EF guard_sword)
+            createInspectAnimation();      // 程序化检视动画
             // 重击蓄力 hold：取自 EF steel_whirlwind_charging.json t=0 帧的右臂 5 关节，
             // 静态保持。比手写 Euler 准确（坐标系自动转换）。
             loadEFAnimation("sword_heavy_charge", "animations/biped/combat/sword_heavy_charge.json");
             loadEFAnimation("parry", "animations/biped/combat/guard_sword_hit.json");
-            loadEFAnimation("inspect", "animations/biped/combat/inspect.json");
             LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
             LOGGER.error("[MeshManager] Failed to load biped model", e);
@@ -491,5 +491,12 @@ public final class MeshManager {
         loadedAnims.put("block", sheets);
         LOGGER.info("[MeshManager] Created programmatic block animation (baked from 6ff555b)");
     }
-}
 
+    private static void createInspectAnimation() {
+        Map<String, TransformSheet> sheets = Maps.newHashMap();
+        // 占位: 只需注册 "inspect" 名字 + 4.0s 长度，实际姿势在 SkinnedMeshLayer 里用 applyTweakToJoint
+        sheets.put("Shoulder_R", sheet(new float[][] {{0.0f, 0,0,0}, {4.0f, 0,0,0}}));
+        loadedAnims.put("inspect", sheets);
+        LOGGER.info("[MeshManager] Created programmatic inspect animation");
+    }
+}

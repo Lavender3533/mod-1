@@ -148,6 +148,7 @@ public final class BlockPoseTweaker {
             "draw_weapon",           // 3: 拔刀(frame 0)
             "sheath_weapon",         // 4: 收刀(frame 0)
             "block",                 // 5: 格挡
+            "inspect",               // 6: 检视
     };
     private static final String[] DEBUG_TARGET_NAMES = {
             "OFF (正常游戏)",
@@ -156,6 +157,7 @@ public final class BlockPoseTweaker {
             "draw_weapon (拔刀)",
             "sheath_weapon (收刀)",
             "block (格挡)",
+            "inspect (检视)",
     };
     private static int currentDebugTarget = 0;
 
