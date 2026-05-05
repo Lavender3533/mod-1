@@ -13,7 +13,7 @@ buildscript {
 plugins {
     id 'eclipse'
     id 'idea'
-    id 'net.minecraftforge.gradle' version '[6.0.16,6.2)'
+    id 'net.minecraftforge.gradle' version '6.0.42'
 }
 
 apply plugin: 'org.spongepowered.mixin'
@@ -142,6 +142,7 @@ sourceSets.main.resources { srcDir 'src/generated/resources' }
 repositories {
     // Put repositories for dependencies here
     // ForgeGradle automatically adds the Forge maven and Maven Central for you
+    maven { url = 'https://repo.spongepowered.org/repository/maven-public/' }
     maven { url = 'https://maven.aliyun.com/repository/central' }
     maven { url = 'https://maven.aliyun.com/repository/public' }
     // Mojang libraries (authlib etc.)
