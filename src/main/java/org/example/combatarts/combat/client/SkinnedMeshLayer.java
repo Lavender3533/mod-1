@@ -22,6 +22,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
     private static final float TRANSITION_DURATION = 0.15f;
     private static final float COMBAT_TRANSITION_DURATION = 0.12f;
+    private static final float SPEAR_RECOVERY_TRANSITION_DURATION = 0.18f;
 
     // 按玩家 ID 存过渡状态，避免多玩家共用单例 renderer 时互相污染
     private static final java.util.Map<Integer, PlayerAnimState> perPlayerState = new java.util.HashMap<>();
@@ -37,6 +38,8 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         // 动画计时：用墙钟时间推进，不依赖 stateTimer（远程玩家 timer 不 tick）
         String timedAnimName = "";
         long timedAnimStartNano = 0;
+        CombatState timedCombatState = CombatState.IDLE;
+        int timedStateTimer = -1;
     }
 
     private static PlayerAnimState getState(int entityId) {
@@ -69,9 +72,14 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         boolean isHeavyCharge = "sword_heavy_charge".equals(animName);
         boolean isAttack = java.util.Set.of(
                 "sword_light_1", "sword_light_2", "sword_light_3", "sword_dash",
+                "spear_light_1", "spear_light_2", "spear_light_3",
                 "parry"
         ).contains(animName);
         boolean isDodge = "dodge".equals(animName);
+        boolean isSpearAttack = animName.startsWith("spear_light_");
+
+        ICombatCapability cap = player != null
+                ? CombatCapabilityEvents.getCombat(player).orElse(null) : null;
 
         // 当前帧使用的 locomotion 子动画名（仅在 isBlock/isHeavyCharge/isDrawSheath 分支会赋值）。
         // 用于触发子动画切换时的过渡插值，避免 idle ↔ walk 硬切导致的腿部抽动。
@@ -277,9 +285,18 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         ps.lastFrameTime = now;
         dt = Math.min(dt, 0.1f);
 
+        String previousAnimName = ps.prevAnimName;
+        boolean leavingSpearAttack = previousAnimName != null
+                && previousAnimName.startsWith("spear_light_")
+                && !animName.startsWith("spear_light_");
+
         if (!animName.equals(ps.prevAnimName)) {
             ps.currentTransitionDuration = isTimedAnimation(animName) || isTimedAnimation(ps.prevAnimName)
                     ? COMBAT_TRANSITION_DURATION : TRANSITION_DURATION;
+            if (leavingSpearAttack) {
+                ps.prevPose = createSpearLightTargetPose(player, state, armature, 1.0f);
+                ps.currentTransitionDuration = Math.max(ps.currentTransitionDuration, SPEAR_RECOVERY_TRANSITION_DURATION);
+            }
             ps.prevAnimName = animName;
             ps.transitionTimer = ps.currentTransitionDuration;
         } else if (activeLocoAnim != null && !activeLocoAnim.equals(ps.prevLocoAnim)) {
@@ -346,9 +363,41 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         // stateTimer 在远程玩家上不 tick，会导致动画冻住 + sync 包到达时跳变("卡带")
         if (isTimedAnimation(animName)) {
             PlayerAnimState ps = getState(state.id);
-            if (!animName.equals(ps.timedAnimName)) {
+            CombatState combatState = CombatState.IDLE;
+            int stateTimer = -1;
+            if (player != null) {
+                var combatOpt = CombatCapabilityEvents.getCombat(player);
+                if (combatOpt.isPresent()) {
+                    ICombatCapability cap = combatOpt.orElseThrow(IllegalStateException::new);
+                    combatState = cap.getState();
+                    stateTimer = cap.getStateTimer();
+                }
+            }
+
+            boolean restartedSameTimedState = combatState.isTimed()
+                    && combatState == ps.timedCombatState
+                    && stateTimer > ps.timedStateTimer;
+            boolean newTimedState = combatState != ps.timedCombatState;
+
+            if (!animName.equals(ps.timedAnimName)
+                    || newTimedState
+                    || restartedSameTimedState
+                    || ps.timedAnimStartNano == 0L) {
                 ps.timedAnimName = animName;
-                ps.timedAnimStartNano = System.nanoTime();
+                ps.timedCombatState = combatState;
+                ps.timedStateTimer = stateTimer;
+
+                long now = System.nanoTime();
+                if (combatState.isTimed() && stateTimer >= 0) {
+                    int durationTicks = combatState.getDurationTicks();
+                    int remaining = Math.max(0, Math.min(durationTicks, stateTimer));
+                    double elapsedSeconds = (durationTicks - remaining + partialTick) / 20.0;
+                    ps.timedAnimStartNano = now - (long) (elapsedSeconds * 1_000_000_000L);
+                } else {
+                    ps.timedAnimStartNano = now;
+                }
+            } else {
+                ps.timedStateTimer = stateTimer;
             }
             float elapsed = (System.nanoTime() - ps.timedAnimStartNano) / 1_000_000_000f;
             return Math.min(elapsed, animLength);
@@ -380,14 +429,27 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         combatOpt.ifPresent(cap -> {
             CombatState state = cap.getState();
-            getState(player.getId()).lastCombatState = state;
+            PlayerAnimState ps = getState(player.getId());
+            ps.lastCombatState = state;
+            if (!state.isTimed()) {
+                ps.timedAnimName = "";
+                ps.timedAnimStartNano = 0L;
+                ps.timedCombatState = state;
+                ps.timedStateTimer = -1;
+            }
 
             switch (state) {
                 case DRAW_WEAPON -> result[0] = "draw_weapon";
                 case SHEATH_WEAPON -> result[0] = "sheath_weapon";
                 case ATTACK_LIGHT -> {
                     int combo = cap.getComboCount();
+                    boolean isSpear = cap.getWeaponType() == org.example.combatarts.combat.WeaponType.SPEAR;
                     if (combo == 99) result[0] = "sword_dash";
+                    else if (isSpear) result[0] = switch (combo) {
+                        case 2 -> "spear_light_2";
+                        case 3 -> "spear_light_3";
+                        default -> "spear_light_1";
+                    };
                     else result[0] = switch (combo) {
                         case 2 -> "sword_light_2";
                         case 3 -> "sword_light_3";
@@ -508,6 +570,191 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             if (BlockPoseTweaker.getHeldPos(i) != 0) return true;
         }
         return false;
+    }
+
+    private Pose createSpearLightTargetPose(Player player, AvatarRenderState state, Armature armature, float progress) {
+        String locoAnim = resolveLocomotion(player);
+        float locoTime = computeAnimTime(player, locoAnim, state);
+        Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+        Pose holdPose = MeshManager.getPoseAtTime("hold_longsword", 0f);
+
+        Pose pose = new Pose();
+        locoPose.forEachEnabledTransforms((name, jt) ->
+                pose.putJointData(name, jt.copy()));
+        holdPose.forEachEnabledTransforms((name, jt) -> {
+            if (isSpearHoldBaseJoint(name)) {
+                pose.putJointData(name, jt.copy());
+            }
+        });
+
+        applySpearLightPose(pose, armature, progress);
+        return pose;
+    }
+
+    private static boolean isSpearHoldBaseJoint(String name) {
+        return name.startsWith("Shoulder_")
+                || name.startsWith("Arm_")
+                || name.startsWith("Hand_")
+                || name.startsWith("Elbow_")
+                || name.startsWith("Tool_")
+                || name.equals("Torso")
+                || name.equals("Chest")
+                || name.equals("Head");
+    }
+
+    private static void applySpearLightPose(Pose pose, Armature armature, float progress) {
+        applyKeyedTweak(pose, armature, "Root", new float[][] {
+                {0.00f,   0,  -2,   0},
+                {0.22f,   2,   6,   1},
+                {0.42f,   0,  -3,   0},
+                {0.62f,  -3, -10,  -2},
+                {1.00f,  -3, -10,  -2},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Torso", new float[][] {
+                {0.00f,   1,  -3,   0},
+                {0.22f,   4,  10,   1},
+                {0.42f,   1,  -2,  -1},
+                {0.62f,  -2, -10,  -2},
+                {1.00f,  -2, -10,  -2},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Chest", new float[][] {
+                {0.00f,   2,  -5,   0},
+                {0.22f,   8,  15,   2},
+                {0.42f,   2,  -4,  -1},
+                {0.62f,  -4, -14,  -2},
+                {1.00f,  -4, -14,  -2},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Head", new float[][] {
+                {0.00f,  -2,   6,   0},
+                {0.22f,  -4,   1,   0},
+                {0.42f,  -2,   5,   0},
+                {0.62f,  -1,   8,   1},
+                {1.00f,  -1,   8,   1},
+        }, progress);
+
+        applyKeyedTweak(pose, armature, "Shoulder_R", new float[][] {
+                {0.00f,   0, -10,   0},
+                {0.22f,   4, -18,  -2},
+                {0.42f,   6,  -4,  -1},
+                {0.62f,  10,  10,   0},
+                {1.00f,  10,  10,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Arm_R", new float[][] {
+                {0.00f,  70,   0,  10},
+                {0.22f,  84,  -8,  12},
+                {0.42f,  34,  34,  22},
+                {0.62f,   0,  70,  30},
+                {1.00f,   0,  70,  30},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Hand_R", new float[][] {
+                {0.00f, -10,   0,   0},
+                {0.22f, -14,  -4,   0},
+                {0.42f,  -5,  -2,   0},
+                {0.62f,   0,   0,   0},
+                {1.00f,   0,   0,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Shoulder_L", new float[][] {
+                {0.00f,  10,   0, -10},
+                {0.22f,  14,  -4, -14},
+                {0.42f,   6,   2,  -6},
+                {0.62f,   0,  10,   0},
+                {1.00f,   0,  10,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Arm_L", new float[][] {
+                {0.00f,   0, -40, -20},
+                {0.22f,  -4, -52, -24},
+                {0.42f,   5,  -6, -10},
+                {0.62f,  10,  30,   0},
+                {1.00f,  10,  30,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Hand_L", new float[][] {
+                {0.00f, -10,   0, -10},
+                {0.22f, -12,  -6, -12},
+                {0.42f, -16,  -2,  -5},
+                {0.62f, -20,   0,   0},
+                {1.00f, -20,   0,   0},
+        }, progress);
+
+        applyKeyedTweak(pose, armature, "Thigh_R", new float[][] {
+                {0.00f,  -5,   3,  -1},
+                {0.22f,  -9,   5,  -2},
+                {0.42f, -15,   6,  -2},
+                {0.62f, -22,   7,  -3},
+                {1.00f, -22,   7,  -3},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Leg_R", new float[][] {
+                {0.00f,   4,   0,   0},
+                {0.22f,   7,   0,   0},
+                {0.42f,  12,   0,   0},
+                {0.62f,  18,   0,   0},
+                {1.00f,  18,   0,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Knee_R", new float[][] {
+                {0.00f,   0,   0,   0},
+                {0.22f,   1,   0,  -1},
+                {0.42f,   2,   0,  -2},
+                {0.62f,   3,   0,  -3},
+                {1.00f,   3,   0,  -3},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Thigh_L", new float[][] {
+                {0.00f,   4,  -3,   1},
+                {0.22f,   7,  -6,   2},
+                {0.42f,  10,  -7,   3},
+                {0.62f,  14,  -7,   4},
+                {1.00f,  14,  -7,   4},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Leg_L", new float[][] {
+                {0.00f,   2,   0,   0},
+                {0.22f,   4,   0,   0},
+                {0.42f,   6,   0,   0},
+                {0.62f,   8,   0,   0},
+                {1.00f,   8,   0,   0},
+        }, progress);
+        applyKeyedTweak(pose, armature, "Knee_L", new float[][] {
+                {0.00f,   0,   0,   0},
+                {0.22f,   1,   0,   1},
+                {0.42f,   2,   0,   2},
+                {0.62f,   2,   0,   3},
+                {1.00f,   2,   0,   3},
+        }, progress);
+    }
+
+    private static void applyKeyedTweak(Pose pose, Armature armature, String jointName,
+                                        float[][] keys, float progress) {
+        float[] rot = sampleKeyedRotation(keys, progress);
+        applyTweakToJoint(pose, armature, jointName, rot[0], rot[1], rot[2]);
+    }
+
+    private static float[] sampleKeyedRotation(float[][] keys, float progress) {
+        if (progress <= keys[0][0]) {
+            return new float[] {keys[0][1], keys[0][2], keys[0][3]};
+        }
+        int last = keys.length - 1;
+        if (progress >= keys[last][0]) {
+            return new float[] {keys[last][1], keys[last][2], keys[last][3]};
+        }
+
+        for (int i = 0; i < last; i++) {
+            float[] a = keys[i];
+            float[] b = keys[i + 1];
+            if (progress >= a[0] && progress <= b[0]) {
+                float span = b[0] - a[0];
+                float t = span > 0f ? (progress - a[0]) / span : 0f;
+                t = smoothStep01(t);
+                return new float[] {
+                        a[1] + (b[1] - a[1]) * t,
+                        a[2] + (b[2] - a[2]) * t,
+                        a[3] + (b[3] - a[3]) * t
+                };
+            }
+        }
+
+        return new float[] {0f, 0f, 0f};
+    }
+
+    private static float smoothStep01(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * t * (t * (t * 6f - 15f) + 10f);
     }
 
     private static void applyTweakToJoint(Pose pose, Armature armature, String jointName,

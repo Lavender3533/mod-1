@@ -68,6 +68,9 @@ public final class MeshManager {
             loadEFAnimation("sword_light_2", "animations/biped/combat/sword_auto2.json");
             loadEFAnimation("sword_light_3", "animations/biped/combat/sword_auto3.json");
             loadEFAnimation("sword_dash", "animations/biped/combat/sword_dash.json");
+            loadEFAnimation("spear_light_1", "animations/biped/combat/spear_auto1.json");
+            loadEFAnimation("spear_light_2", "animations/biped/combat/spear_auto2.json");
+            loadEFAnimation("spear_light_3", "animations/biped/combat/spear_auto3.json");
             loadEFAnimation("dodge", "animations/biped/combat/step_backward.json");
             createBlockAnimation();        // 程序化格挡姿势(替换 EF guard_sword)
             createInspectAnimation();      // 程序化检视动画
@@ -498,5 +501,64 @@ public final class MeshManager {
         sheets.put("Shoulder_R", sheet(new float[][] {{0.0f, 0,0,0}, {4.0f, 0,0,0}}));
         loadedAnims.put("inspect", sheets);
         LOGGER.info("[MeshManager] Created programmatic inspect animation");
+    }
+
+    private static void createSpearLightAnimations() {
+        // 矛轻攻击1: 突刺。0.7s 总长 (14 tick)
+        // 0.0 起手 → 0.06 蓄力拉后 → 0.12 突刺(结束姿势) → 0.30 保持 → 0.70 恢复
+        {
+            Map<String, TransformSheet> sheets = Maps.newHashMap();
+            sheets.put("Shoulder_R", sheet(new float[][] {
+                {0.00f,   0, -10,   0},
+                {0.06f,   5, -15,   0},
+                {0.12f,  10,  10,   0},
+                {0.30f,  10,  10,   0},
+                {0.50f,   5,   0,   0},
+                {0.70f,   0, -10,   0},
+            }));
+            sheets.put("Arm_R", sheet(new float[][] {
+                {0.00f,  70,   0,  10},
+                {0.06f,  80,   0,  12},
+                {0.12f,   0,  70,  30},
+                {0.30f,   0,  70,  30},
+                {0.50f,  35,  35,  20},
+                {0.70f,  70,   0,  10},
+            }));
+            sheets.put("Hand_R", sheet(new float[][] {
+                {0.00f, -10,   0,   0},
+                {0.12f,   0,   0,   0},
+                {0.30f,   0,   0,   0},
+                {0.70f, -10,   0,   0},
+            }));
+            sheets.put("Shoulder_L", sheet(new float[][] {
+                {0.00f,  10,   0, -10},
+                {0.06f,  12,   2, -12},
+                {0.12f,   0,  10,   0},
+                {0.30f,   0,  10,   0},
+                {0.50f,   5,   5,  -5},
+                {0.70f,  10,   0, -10},
+            }));
+            sheets.put("Arm_L", sheet(new float[][] {
+                {0.00f,   0, -40, -20},
+                {0.06f,   2, -45, -22},
+                {0.12f,  10,  30,   0},
+                {0.30f,  10,  30,   0},
+                {0.50f,   5,  -5, -10},
+                {0.70f,   0, -40, -20},
+            }));
+            sheets.put("Hand_L", sheet(new float[][] {
+                {0.00f, -10,   0, -10},
+                {0.12f, -20,   0,   0},
+                {0.30f, -20,   0,   0},
+                {0.70f, -10,   0, -10},
+            }));
+            loadedAnims.put("spear_light_1", sheets);
+        }
+
+        // 矛轻攻击2/3: 暂时复用 1 的数据，后续由用户提供单独姿势
+        loadedAnims.put("spear_light_2", loadedAnims.get("spear_light_1"));
+        loadedAnims.put("spear_light_3", loadedAnims.get("spear_light_1"));
+
+        LOGGER.info("[MeshManager] Created programmatic spear light animations (1/2/3)");
     }
 }

@@ -15,11 +15,41 @@ import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.item.ItemStack;
 import org.example.combatarts.combat.CombatState;
 import org.example.combatarts.combat.capability.CombatCapabilityEvents;
+import org.example.combatarts.combat.capability.ICombatCapability;
 import org.example.combatarts.combat.client.render.mesh.*;
 
 public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
     private final ItemModelResolver itemModelResolver;
+    private static final float SPEAR_ITEM_RECOVERY_SECONDS = 0.18f;
+    private static final java.util.Map<Integer, ItemAnimState> itemAnimStates = new java.util.HashMap<>();
+    private static final float[][] SPEAR_ATTACK_ROT_KEYS = {
+            {0.00f, -40,   0,   5},
+            {0.14f, -34,  -5,   0},
+            {0.32f, -52,   1,   8},
+            {0.48f, -65,   5,  15},
+            {0.66f, -63,   4,  12},
+            {0.86f, -48,   0,   7},
+            {1.00f, -40,   0,   5},
+    };
+    private static final float[][] SPEAR_ATTACK_POS_KEYS = {
+            {0.00f, 0.00f, -0.15f, -0.15f},
+            {0.14f, 0.00f, -0.18f, -0.10f},
+            {0.32f, 0.00f, -0.13f, -0.17f},
+            {0.48f, 0.00f, -0.10f, -0.20f},
+            {0.66f, 0.00f, -0.11f, -0.18f},
+            {0.86f, 0.00f, -0.14f, -0.14f},
+            {1.00f, 0.00f, -0.15f, -0.15f},
+    };
+
+    private static final class ItemAnimState {
+        CombatState state = CombatState.IDLE;
+        int combo = 0;
+        int lastTimer = -1;
+        long startNano = 0L;
+        boolean wasSpearAttack = false;
+        long recoveryStartNano = 0L;
+    }
 
     public CombatItemInHandLayer(RenderLayerParent<AvatarRenderState, CombatPlayerModel> parent,
                                  ItemModelResolver itemModelResolver) {
@@ -96,6 +126,8 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
             if (combatState == CombatState.INSPECT) {
             }
 
+            // 矛攻击: EF 动画已通过 Tool_R 控制矛的位置，不加额外变换
+
             // Live tweaker overlay
             poseStack.mulPose(Axis.XP.rotationDegrees(BlockPoseTweaker.getHeldRot(0)));
             poseStack.mulPose(Axis.YP.rotationDegrees(BlockPoseTweaker.getHeldRot(1)));
@@ -155,6 +187,103 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
         if (mc.level == null) return null;
         Entity entity = mc.level.getEntity(state.id);
         return entity instanceof Player p ? p : null;
+    }
+
+    private static float computeSpearItemProgress(Player player, ICombatCapability cap) {
+        long now = System.nanoTime();
+        ItemAnimState st = itemAnimStates.computeIfAbsent(player.getId(), id -> new ItemAnimState());
+        int timer = cap.getStateTimer();
+        int combo = cap.getComboCount();
+        boolean restart = st.state != cap.getState()
+                || st.combo != combo
+                || timer > st.lastTimer
+                || st.startNano == 0L;
+
+        int durationTicks = CombatState.ATTACK_LIGHT.getDurationTicks();
+        if (restart) {
+            int remaining = Math.max(0, Math.min(durationTicks, timer));
+            double elapsedSeconds = (durationTicks - remaining) / 20.0;
+            st.startNano = now - (long) (elapsedSeconds * 1_000_000_000L);
+            st.state = cap.getState();
+            st.combo = combo;
+        }
+        st.lastTimer = timer;
+
+        float elapsed = (now - st.startNano) / 1_000_000_000f;
+        float length = durationTicks / 20.0f;
+        return Math.max(0f, Math.min(1f, elapsed / length));
+    }
+
+    private static void updateSpearItemExitState(ItemAnimState itemState, boolean spearAttack) {
+        long now = System.nanoTime();
+        if (spearAttack) {
+            itemState.wasSpearAttack = true;
+            itemState.recoveryStartNano = 0L;
+        } else if (itemState.wasSpearAttack) {
+            itemState.wasSpearAttack = false;
+            itemState.recoveryStartNano = now;
+            itemState.state = CombatState.IDLE;
+            itemState.lastTimer = -1;
+        }
+    }
+
+    private static void applySpearItemRecovery(PoseStack poseStack, ItemAnimState itemState) {
+        if (itemState.recoveryStartNano == 0L) return;
+
+        float elapsed = (System.nanoTime() - itemState.recoveryStartNano) / 1_000_000_000f;
+        float t = Math.max(0f, Math.min(1f, elapsed / SPEAR_ITEM_RECOVERY_SECONDS));
+        float keepEndPose = 1f - smoothStep01(t);
+        if (keepEndPose <= 0f) {
+            itemState.recoveryStartNano = 0L;
+            return;
+        }
+
+        float[] endRot = sampleKeyedVec3(SPEAR_ATTACK_ROT_KEYS, 1.0f);
+        float[] endPos = sampleKeyedVec3(SPEAR_ATTACK_POS_KEYS, 1.0f);
+        applySpearItemTransform(poseStack, scaleVec3(endRot, keepEndPose), scaleVec3(endPos, keepEndPose));
+    }
+
+    private static void applySpearItemTransform(PoseStack poseStack, float[] rot, float[] pos) {
+        poseStack.mulPose(Axis.XP.rotationDegrees(rot[0]));
+        poseStack.mulPose(Axis.YP.rotationDegrees(rot[1]));
+        poseStack.mulPose(Axis.ZP.rotationDegrees(rot[2]));
+        poseStack.translate(pos[0], pos[1], pos[2]);
+    }
+
+    private static float[] scaleVec3(float[] vec, float scale) {
+        return new float[] {vec[0] * scale, vec[1] * scale, vec[2] * scale};
+    }
+
+    private static float[] sampleKeyedVec3(float[][] keys, float progress) {
+        if (progress <= keys[0][0]) {
+            return new float[] {keys[0][1], keys[0][2], keys[0][3]};
+        }
+        int last = keys.length - 1;
+        if (progress >= keys[last][0]) {
+            return new float[] {keys[last][1], keys[last][2], keys[last][3]};
+        }
+
+        for (int i = 0; i < last; i++) {
+            float[] a = keys[i];
+            float[] b = keys[i + 1];
+            if (progress >= a[0] && progress <= b[0]) {
+                float span = b[0] - a[0];
+                float t = span > 0f ? (progress - a[0]) / span : 0f;
+                t = smoothStep01(t);
+                return new float[] {
+                        a[1] + (b[1] - a[1]) * t,
+                        a[2] + (b[2] - a[2]) * t,
+                        a[3] + (b[3] - a[3]) * t
+                };
+            }
+        }
+
+        return new float[] {0f, 0f, 0f};
+    }
+
+    private static float smoothStep01(float t) {
+        t = Math.max(0f, Math.min(1f, t));
+        return t * t * t * (t * (t * 6f - 15f) + 10f);
     }
 
     // Y 偏移曲线: 0 → -15 → -10 → 0 (sin/cos 三段，天然平滑无尖角)
