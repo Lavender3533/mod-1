@@ -90,14 +90,16 @@ public class CombatKeyBindings {
         event.register(DODGE);
         event.register(INSPECT);
         event.register(HEAVY_ATTACK);
-        event.register(RELOAD_ANIMATIONS);
-        event.register(POSE_CYCLE_BONE);
-        event.register(POSE_CYCLE_AXIS);
-        event.register(POSE_DECREASE);
-        event.register(POSE_INCREASE);
-        event.register(POSE_PRINT);
-        event.register(POSE_RESET_ALL);
-        event.register(POSE_CYCLE_TARGET);
-        event.register(POSE_MOUSE_MODE);
+        if (Config.devMode) {
+            event.register(RELOAD_ANIMATIONS);
+            event.register(POSE_CYCLE_BONE);
+            event.register(POSE_CYCLE_AXIS);
+            event.register(POSE_DECREASE);
+            event.register(POSE_INCREASE);
+            event.register(POSE_PRINT);
+            event.register(POSE_RESET_ALL);
+            event.register(POSE_CYCLE_TARGET);
+            event.register(POSE_MOUSE_MODE);
+        }
     }
 }

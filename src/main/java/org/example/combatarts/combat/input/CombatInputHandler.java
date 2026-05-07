@@ -207,23 +207,24 @@ public class CombatInputHandler {
             });
         }
 
-        while (CombatKeyBindings.RELOAD_ANIMATIONS.consumeClick()) {
-            int count = CombatAnimationController.reloadAnimations();
-            mc.gui.getChat().addMessage(
-                    net.minecraft.network.chat.Component.literal("§a[Combat Arts] 动画已重载: " + count + " 个")
-            );
-        }
+        if (Config.devMode) {
+            while (CombatKeyBindings.RELOAD_ANIMATIONS.consumeClick()) {
+                int count = CombatAnimationController.reloadAnimations();
+                mc.gui.getChat().addMessage(
+                        net.minecraft.network.chat.Component.literal("§a[Combat Arts] 动画已重载: " + count + " 个")
+                );
+            }
 
-        // 姿势调试工具
-        while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
-        while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
-        while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
-        while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
-        while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
-        while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
-        while (CombatKeyBindings.POSE_CYCLE_TARGET.consumeClick()) BlockPoseTweaker.cycleDebugTarget();
-        while (CombatKeyBindings.POSE_MOUSE_MODE.consumeClick()) {
-            mc.setScreen(new org.example.combatarts.combat.client.PoseTweakerScreen());
+            while (CombatKeyBindings.POSE_CYCLE_BONE.consumeClick()) BlockPoseTweaker.cycleBone();
+            while (CombatKeyBindings.POSE_CYCLE_AXIS.consumeClick()) BlockPoseTweaker.cycleAxis();
+            while (CombatKeyBindings.POSE_DECREASE.consumeClick())   BlockPoseTweaker.decrease();
+            while (CombatKeyBindings.POSE_INCREASE.consumeClick())   BlockPoseTweaker.increase();
+            while (CombatKeyBindings.POSE_PRINT.consumeClick())      BlockPoseTweaker.printAll();
+            while (CombatKeyBindings.POSE_RESET_ALL.consumeClick())  BlockPoseTweaker.resetAll();
+            while (CombatKeyBindings.POSE_CYCLE_TARGET.consumeClick()) BlockPoseTweaker.cycleDebugTarget();
+            while (CombatKeyBindings.POSE_MOUSE_MODE.consumeClick()) {
+                mc.setScreen(new org.example.combatarts.combat.client.PoseTweakerScreen());
+            }
         }
     }
 
