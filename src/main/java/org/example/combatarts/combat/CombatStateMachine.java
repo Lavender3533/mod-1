@@ -16,8 +16,8 @@ public class CombatStateMachine {
     public static boolean canTransition(ICombatCapability cap, CombatState target) {
         CombatState current = cap.getState();
 
-        // Same state — no transition needed
-        if (current == target) return target == CombatState.ATTACK_LIGHT; // allow combo re-entry
+        // Same state — only one-shot actions that need an explicit restart may re-enter.
+        if (current == target) return target == CombatState.ATTACK_LIGHT || target == CombatState.INSPECT;
 
         // Non-interruptible state with remaining timer blocks transition
         if (!current.isInterruptible() && cap.getStateTimer() > 0) {

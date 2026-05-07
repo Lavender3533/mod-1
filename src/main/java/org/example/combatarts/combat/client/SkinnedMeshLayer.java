@@ -239,6 +239,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             String locoAnim = resolveLocomotion(player);
             activeLocoAnim = locoAnim;
             float locoTime = computeAnimTime(player, locoAnim, state);
+            float combatTime = computeAnimTime(player, animName, state);
             Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
             Pose holdPose = MeshManager.getPoseAtTime("hold_longsword", 0f);
 
@@ -254,21 +255,36 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 }
             });
 
-            // 检视转刀: Hand_R 做主旋转，肩/肘小幅配合
-            float partial = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
-            float gameTime = (float)(Minecraft.getInstance().level != null ?
-                    Minecraft.getInstance().level.getGameTime() : 0) + partial;
-            float spinT = (gameTime / 15.0f) % 1.0f; // 0.75 秒一圈
-            float spinDeg = -360f * spinT;
-            float wave = (float) Math.sin(spinT * Math.PI);
-            float wave2 = (float) Math.sin(spinT * 2 * Math.PI);
+        // 检视转刀: 绑定到 INSPECT 状态自身的计时，按一下固定转一整圈。
+                float inspectDuration = MeshManager.getAnimLength(animName);
+                float spinT = inspectDuration > 0.0f
+                    ? Math.min(combatTime / inspectDuration, 1.0f)
+                    : 0.0f;
+                float spinDeg = -360f * spinT;
+                float wave = (float) Math.sin(spinT * Math.PI);
+                float wave2 = (float) Math.sin(spinT * 2 * Math.PI);
+                    OpenMatrix4f handBaseMatrix = getJointLocalPoseMatrix(targetPose, armature, "Hand_R");
 
-            applyTweakToJoint(targetPose, armature, "Shoulder_R",
+                // 保留原先检视时肩/臂的摆动，只冻结 Hand_R，避免手跟着武器一起转。
+                applyTweakToJoint(targetPose, armature, "Shoulder_R",
                     40 + 5f * wave, -8f * wave2, 0);
-            applyTweakToJoint(targetPose, armature, "Arm_R",
+                applyTweakToJoint(targetPose, armature, "Arm_R",
                     10 + 8f * wave, 5f * wave2, 8f * wave);
-            applyTweakToJoint(targetPose, armature, "Hand_R",
-                    50, spinDeg, 70);
+                applyTweakToJoint(targetPose, armature, "Hand_R", 50, 0, 70);
+
+                OpenMatrix4f fixedHandRot = OpenMatrix4f.createRotatorDeg(50f, Vec3f.X_AXIS)
+                    .rotateDeg(70f, Vec3f.Z_AXIS);
+                OpenMatrix4f originalHandRot = OpenMatrix4f.createRotatorDeg(50f, Vec3f.X_AXIS)
+                    .rotateDeg(spinDeg, Vec3f.Y_AXIS)
+                    .rotateDeg(70f, Vec3f.Z_AXIS);
+                    OpenMatrix4f invHandBaseMatrix = new OpenMatrix4f(handBaseMatrix);
+                    invHandBaseMatrix.invert();
+                    OpenMatrix4f invFixedHandRot = new OpenMatrix4f(fixedHandRot);
+                    invFixedHandRot.invert();
+                    OpenMatrix4f handDeltaRot = OpenMatrix4f.mul(invFixedHandRot, originalHandRot, null);
+                    OpenMatrix4f toolCompensationRot = OpenMatrix4f.mul(invHandBaseMatrix, handDeltaRot, null);
+                    toolCompensationRot.mulBack(handBaseMatrix);
+                applyRotationToJoint(targetPose, armature, "Tool_R", toolCompensationRot);
         } else if (isDodge) {
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
@@ -788,6 +804,41 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         JointTransform newJt = JointTransform.fromMatrix(newDelta);
         newJt.rotation().normalize();
         pose.putJointData(jointName, newJt);
+    }
+
+    private static void applyRotationToJoint(Pose pose, Armature armature, String jointName,
+                                             OpenMatrix4f rotation) {
+        if (!armature.hasJoint(jointName) || rotation == null) return;
+
+        Joint joint = armature.searchJointByName(jointName);
+        JointTransform existing = pose.orElseEmpty(jointName);
+
+        OpenMatrix4f local = joint.getLocalTransform();
+        OpenMatrix4f delta = existing.toMatrix();
+        OpenMatrix4f absolute = OpenMatrix4f.mul(local, delta, null);
+
+        OpenMatrix4f newAbsolute = OpenMatrix4f.mul(rotation, absolute, null);
+        newAbsolute.m30 = absolute.m30;
+        newAbsolute.m31 = absolute.m31;
+        newAbsolute.m32 = absolute.m32;
+
+        OpenMatrix4f invLocal = new OpenMatrix4f(local);
+        invLocal.invert();
+        OpenMatrix4f newDelta = OpenMatrix4f.mul(invLocal, newAbsolute, null);
+
+        JointTransform newJt = JointTransform.fromMatrix(newDelta);
+        newJt.rotation().normalize();
+        pose.putJointData(jointName, newJt);
+    }
+
+    private static OpenMatrix4f getJointLocalPoseMatrix(Pose pose, Armature armature, String jointName) {
+        if (!armature.hasJoint(jointName)) {
+            return new OpenMatrix4f();
+        }
+
+        Joint joint = armature.searchJointByName(jointName);
+        JointTransform existing = pose.orElseEmpty(jointName);
+        return OpenMatrix4f.mul(joint.getLocalTransform(), existing.toMatrix(), null);
     }
 
     private static Player resolvePlayer(AvatarRenderState state) {

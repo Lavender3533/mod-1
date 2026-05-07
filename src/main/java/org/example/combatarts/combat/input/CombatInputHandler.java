@@ -199,9 +199,7 @@ public class CombatInputHandler {
 
         while (CombatKeyBindings.INSPECT.consumeClick()) {
             CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
-                if (cap.getState() == CombatState.INSPECT) {
-                    requestWithPrediction(cap, CombatState.IDLE);
-                } else if (cap.isWeaponDrawn()) {
+                if (cap.isWeaponDrawn() && CombatStateMachine.canTransition(cap, CombatState.INSPECT)) {
                     requestWithPrediction(cap, CombatState.INSPECT);
                 }
             });

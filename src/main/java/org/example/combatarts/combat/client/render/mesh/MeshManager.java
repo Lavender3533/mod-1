@@ -497,8 +497,8 @@ public final class MeshManager {
 
     private static void createInspectAnimation() {
         Map<String, TransformSheet> sheets = Maps.newHashMap();
-        // 占位: 只需注册 "inspect" 名字 + 4.0s 长度，实际姿势在 SkinnedMeshLayer 里用 applyTweakToJoint
-        sheets.put("Shoulder_R", sheet(new float[][] {{0.0f, 0,0,0}, {4.0f, 0,0,0}}));
+        // 占位: 只需注册 "inspect" 名字 + 0.5s 长度，实际姿势在 SkinnedMeshLayer 里按状态时间驱动。
+        sheets.put("Shoulder_R", sheet(new float[][] {{0.0f, 0,0,0}, {0.5f, 0,0,0}}));
         loadedAnims.put("inspect", sheets);
         LOGGER.info("[MeshManager] Created programmatic inspect animation");
     }

@@ -1,6 +1,7 @@
 package org.example.combatarts.combat.capability;
 
 import com.mojang.logging.LogUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
 import net.minecraftforge.common.capabilities.Capability;
@@ -181,6 +182,21 @@ public class CombatCapabilityEvents {
                         || prevWeaponType != cap.getWeaponType()
                         || (prevStateTimer > 0 && cap.getStateTimer() == 0)) {
                     broadcastCombatState(event.player(), cap);
+                }
+            });
+        } else if (event.side() == LogicalSide.CLIENT) {
+            Minecraft mc = Minecraft.getInstance();
+            Player localPlayer = mc.player;
+            if (localPlayer == null || event.player() == localPlayer) {
+                return;
+            }
+
+            getCombat(event.player()).ifPresent(cap -> {
+                // 远端玩家在客户端不会走服务端 tick，stateTimer 会卡在最近一次同步值。
+                // 这会让“同状态重开”在对方视角里表现成 10 -> 10，无法识别为一次新检视。
+                // 本地近似倒计时后，下一次服务端重置 timer 时就能正确触发远端重播。
+                if (cap.getState().isTimed() && cap.getStateTimer() > 0) {
+                    cap.setStateTimer(cap.getStateTimer() - 1);
                 }
             });
         }
