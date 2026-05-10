@@ -24,8 +24,9 @@ public class CombatStateMachine {
             return target.getPriority() > current.getPriority(); // only higher priority can override
         }
 
-        // Attack requires weapon drawn
-        if ((target == CombatState.ATTACK_LIGHT || target == CombatState.ATTACK_HEAVY
+        // Heavy attack requires weapon drawn. Light attack 允许未拔刀(持非 mod 物品时仅走动画/combo,
+        // 伤害交给 vanilla; CombatDamageHandler 已 guard 未拔刀不介入)。
+        if ((target == CombatState.ATTACK_HEAVY
                 || target == CombatState.ATTACK_HEAVY_CHARGING) && !cap.isWeaponDrawn()) {
             return false;
         }
@@ -136,14 +137,22 @@ public class CombatStateMachine {
             if (state == CombatState.ATTACK_LIGHT && isDashCombo(cap)) {
                 cap.resetCombo();
             }
+            // DRAW 完成时若有挂起的轻攻击 (从 packet handler queue 来), 立即 fire — 实现"自动拔刀+攻击"
+            boolean queueAttackAfterDraw = state == CombatState.DRAW_WEAPON && cap.hasQueuedLightAttack();
             if (state == CombatState.DRAW_WEAPON) {
                 cap.setWeaponDrawn(true);
+                // 未拔刀期间累计的 combo 不带到拔刀状态, 否则拔刀后第一刀直接出第三段。
+                cap.resetCombo();
             } else if (state == CombatState.SHEATH_WEAPON) {
                 cap.setWeaponDrawn(false);
                 cap.resetCombo();
             }
             cap.setState(CombatState.IDLE);
             cap.setQueuedLightAttack(false);
+
+            if (queueAttackAfterDraw) {
+                requestTransition(cap, CombatState.ATTACK_LIGHT);
+            }
         }
 
         // Combo timeout: reset if idle too long after last attack

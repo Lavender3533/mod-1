@@ -37,6 +37,9 @@ public class CombatDamageHandler {
         if (!(event.player() instanceof ServerPlayer player)) return;
 
         CombatCapabilityEvents.getCombat(player).ifPresent(cap -> {
+            // 未拔刀时 ATTACK_LIGHT 仅作动画/combo, 伤害交给 vanilla 处理 — 不要叠加。
+            if (!cap.isWeaponDrawn()) return;
+
             CombatState state = cap.getState();
             int elapsed = state.getDurationTicks() - cap.getStateTimer();
 

@@ -81,10 +81,11 @@ public class CombatAvatarRenderer
             });
         }
 
-        // Always suppress vanilla PlayerItemInHandLayer — custom layers handle all cases:
-        // - CombatItemInHandLayer: drawn weapon (idle/walk/run/attack)
-        // - GuardWeaponLayer: drawn weapon (BLOCK/PARRY)
-        // - BackWeaponLayer: sheathed weapon (on back)
+        // 永远清空 vanilla PlayerItemInHandLayer — 自定义 layer 接管全部物品渲染:
+        //  - CombatItemInHandLayer: 拔刀(任意武器) + 未拔刀(持非 mod 物品) — 都用 mod 骨骼定位
+        //  - GuardWeaponLayer: 拔刀 + BLOCK/PARRY
+        //  - BackWeaponLayer: 未拔刀 + 持 mod 武器(SWORD/SPEAR) — 挂背
+        // 由 vanilla 渲染会撕裂(vanilla 物品挂 vanilla 右臂, 但 mod mesh 走自己的动画)。
         clearHandItem(state);
     }
 

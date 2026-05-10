@@ -46,7 +46,9 @@ public class CombatHudOverlay {
 
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             CombatState state = cap.getState();
-            if (!cap.isWeaponDrawn() && state == CombatState.IDLE) {
+            // 未拔刀时完全隐藏战斗 HUD —— 招式名 / combo 计数 / 蓄力条等都不显示。
+            // 未拔刀的攻击只走 vanilla, 不算"战斗状态"。
+            if (!cap.isWeaponDrawn()) {
                 lastSeenState = state;
                 return;
             }

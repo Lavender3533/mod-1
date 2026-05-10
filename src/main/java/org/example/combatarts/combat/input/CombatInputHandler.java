@@ -32,6 +32,9 @@ public class CombatInputHandler {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final int SHEATH_CAMERA_GRACE_TICKS = 12; // 收刀完成后保持第三人称的宽限期(~0.6s)
     private static boolean forcedThirdPerson = false;
+    // 进入战斗第三人称前玩家手动选择的视角。收刀完成后恢复回这个视角，
+    // 而不是无脑切回第一人称（避免擦掉玩家原本就是第三人称的偏好）。
+    private static CameraType originalCameraType = CameraType.FIRST_PERSON;
     private static boolean inspectCameraActive = false;
     private static CameraType cameraBeforeInspect = CameraType.FIRST_PERSON;
     private static int blockHoldTicks = 0;
@@ -40,6 +43,9 @@ public class CombatInputHandler {
     private static int heavyChargeTicks = 0;
     private static boolean lastWeaponDrawn = false;
     private static int sheathCameraGrace = 0;
+    // 持 mod 武器未拔刀按左键 → 自动拔刀, 拔完后立刻接 ATTACK_LIGHT。
+    // 玩家不需要先按 R, 体感更顺。仅持 mod 武器时生效, 其它物品走 vanilla。
+    private static boolean pendingAttackAfterDraw = false;
 
     /**
      * 拦截鼠标点击 — 拔刀后左右键改为战斗系统处理，不让 vanilla 处理。
@@ -50,12 +56,36 @@ public class CombatInputHandler {
         if (mc.player == null || mc.screen != null) return false;
 
         return CombatCapabilityEvents.getCombat(mc.player).map(cap -> {
-            if (!cap.isWeaponDrawn()) return false;
-
             int button = event.getButton();
             int action = event.getAction();
             boolean press = action == GLFW.GLFW_PRESS;
             boolean release = action == GLFW.GLFW_RELEASE;
+
+            // 未拔刀:
+            //  持 mod 武器(SWORD/SPEAR) → 自动拔刀 + queue 攻击, 取消 vanilla(避免 vanilla 用剑伤害)
+            //  持其他物品/空手 → 触发 ATTACK_LIGHT 走 mod 动画/combo, 但不取消 vanilla → vanilla 处理伤害
+            if (!cap.isWeaponDrawn()) {
+                if (button == InputConstants.MOUSE_BUTTON_LEFT && press) {
+                    // 已经在 DRAW/SHEATH 过程中: 仅设 pending, 不重复触发动画 (防狂点重新拔剑)
+                    CombatState curState = cap.getState();
+                    if (curState == CombatState.DRAW_WEAPON || curState == CombatState.SHEATH_WEAPON) {
+                        if (curState == CombatState.DRAW_WEAPON) {
+                            pendingAttackAfterDraw = true;
+                        }
+                        return true; // 仍然取消 vanilla, 避免误伤害
+                    }
+                    WeaponType type = WeaponDetector.detect(mc.player);
+                    if (type != WeaponType.UNARMED) {
+                        cap.setWeaponType(type);
+                        requestWithPrediction(cap, CombatState.DRAW_WEAPON);
+                        pendingAttackAfterDraw = true;
+                        return true; // 取消 vanilla, 不让 vanilla 用剑伤害
+                    }
+                    // 其他物品/空手: 仅触发动画(走 mod ATTACK_LIGHT), vanilla 走自己的伤害
+                    requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                }
+                return false;
+            }
 
             if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 if (press) {
@@ -110,6 +140,17 @@ public class CombatInputHandler {
         CombatCapabilityEvents.getCombat(mc.player).ifPresent(cap -> {
             // 状态机始终 tick — 否则打开物品栏/ESC 期间攻击动画冻结在当前帧
             CombatStateMachine.tick(cap, mc.player.level().getGameTime());
+
+            // 自动拔刀+攻击: 拔刀完成回 IDLE 后, 立刻发起 ATTACK_LIGHT
+            if (pendingAttackAfterDraw && cap.isWeaponDrawn()
+                    && cap.getState() == CombatState.IDLE) {
+                pendingAttackAfterDraw = false;
+                requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+            } else if (pendingAttackAfterDraw && !cap.isWeaponDrawn()
+                    && cap.getState() != CombatState.DRAW_WEAPON) {
+                // DRAW_WEAPON 没起来(被打断/取消) → 清 pending, 防止下次 IDLE 误触
+                pendingAttackAfterDraw = false;
+            }
 
             if (!uiOpen) {
                 if (cap.getState() == CombatState.INSPECT) {
@@ -334,15 +375,19 @@ public class CombatInputHandler {
         if (drawn && forcedThirdPerson
                 && mc.options.getCameraType() == CameraType.FIRST_PERSON
                 && (state == CombatState.IDLE || state == CombatState.BLOCK)) {
+            // 玩家明确选择了第一人称 → 同步 originalCameraType，收刀后不要再切回第三人称
+            originalCameraType = CameraType.FIRST_PERSON;
             requestWithPrediction(cap, CombatState.SHEATH_WEAPON);
             return;
         }
 
         if (shouldBeThirdPerson && !forcedThirdPerson) {
+            // 记录玩家进入战斗前的原始视角，收刀后会恢复回去
+            originalCameraType = mc.options.getCameraType();
             mc.options.setCameraType(CameraType.THIRD_PERSON_BACK);
             forcedThirdPerson = true;
         } else if (!shouldBeThirdPerson && forcedThirdPerson) {
-            mc.options.setCameraType(CameraType.FIRST_PERSON);
+            mc.options.setCameraType(originalCameraType);
             forcedThirdPerson = false;
         }
     }

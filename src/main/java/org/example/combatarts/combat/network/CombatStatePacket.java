@@ -120,6 +120,15 @@ public class CombatStatePacket {
             }
 
             CombatState prevState = cap.getState();
+
+            // ATTACK_LIGHT 在 DRAW_WEAPON 期间到达(自动拔刀+攻击的客户端预测领先服务端):
+            // canTransition 会因 drawn=false 拒绝 → 没伤害。这里 queue 起来, 让 DRAW 完成时 fire。
+            if (requested == CombatState.ATTACK_LIGHT && prevState == CombatState.DRAW_WEAPON) {
+                cap.setQueuedLightAttack(true);
+                CombatCapabilityEvents.broadcastCombatState(player, cap);
+                return;
+            }
+
             CombatStateMachine.requestTransition(cap, requested);
 
             // DODGE: 立即按客户端报告的方向施力（避免依赖服务端不可靠的 player.xxa）

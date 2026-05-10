@@ -67,7 +67,17 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
         if (!combatOpt.isPresent()) return;
 
         combatOpt.ifPresent(cap -> {
-            if (!CombatCapabilityEvents.shouldRenderWeaponInHand(cap)) return;
+            // 渲染条件:
+            //  - 拔刀(任意武器): shouldRenderWeaponInHand = true
+            //  - 未拔刀: 持非 mod 物品(刷怪蛋/方块/食物)也用 mod 骨骼挂手, 跟随 mesh 动画
+            //  - BLOCK/PARRY: 由 GuardWeaponLayer 接管, 跳过
+            //  - 未拔刀 + 持 mod 武器(SWORD/SPEAR): 由 BackWeaponLayer 背挂, 跳过
+            boolean drawn = CombatCapabilityEvents.shouldRenderWeaponInHand(cap);
+            if (!drawn) {
+                org.example.combatarts.combat.WeaponType wt =
+                        org.example.combatarts.combat.WeaponDetector.detect(player);
+                if (wt != org.example.combatarts.combat.WeaponType.UNARMED) return;
+            }
 
             CombatState combatState = cap.getState();
             if (combatState == CombatState.BLOCK || combatState == CombatState.PARRY) return;
