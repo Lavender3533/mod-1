@@ -72,16 +72,16 @@ public class CombatInputHandler {
                         if (curState == CombatState.DRAW_WEAPON) {
                             pendingAttackAfterDraw = true;
                         }
-                        return true; // 仍然取消 vanilla, 避免误伤害
+                        return true;
                     }
                     WeaponType type = WeaponDetector.detect(mc.player);
                     if (type != WeaponType.UNARMED) {
                         cap.setWeaponType(type);
                         requestWithPrediction(cap, CombatState.DRAW_WEAPON);
                         pendingAttackAfterDraw = true;
-                        return true; // 取消 vanilla, 不让 vanilla 用剑伤害
+                        return true;
                     }
-                    // 其他物品/空手: 仅触发动画(走 mod ATTACK_LIGHT), vanilla 走自己的伤害
+                    // 持非 mod 物品/空手: 仅触发 mod 动画(走 ATTACK_LIGHT), vanilla 走自己的伤害
                     requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
                 }
                 return false;
@@ -89,6 +89,12 @@ public class CombatInputHandler {
 
             if (button == InputConstants.MOUSE_BUTTON_LEFT) {
                 if (press) {
+                    // 拔刀但当前手持非武器(滚轮经过食物/方块/非 mod 武器)→ 服务端会以 UNARMED 拒绝 ATTACK_LIGHT,
+                    // 但客户端预测仍能播 mod 动画(sync packet 不回滚本地 state); vanilla 自己处理伤害。
+                    if (cap.getWeaponType() == WeaponType.UNARMED) {
+                        requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                        return false; // 不取消 vanilla, 让 vanilla 处理伤害
+                    }
                     // 左键按下：触发轻攻击（冲刺时变冲刺攻击）
                     if (shouldUseDashAttack(mc, cap)) {
                         cap.setComboCount(99);

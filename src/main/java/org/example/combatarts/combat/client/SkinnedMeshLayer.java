@@ -20,9 +20,21 @@ import org.joml.Quaternionf;
 
 public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlayerModel> {
 
-    private static final float TRANSITION_DURATION = 0.15f;
-    private static final float COMBAT_TRANSITION_DURATION = 0.12f;
-    private static final float SPEAR_RECOVERY_TRANSITION_DURATION = 0.18f;
+    // 过渡时长按场景区分。短 = 切换急促, 长 = 收尾自然。EF 默认 0.15s 偏短, 我们这里整体抬高
+    // 让 attack→idle、走→停 这类大幅度过渡更柔和; combo→combo 反而压短让连击紧凑。
+    private static final float TRANSITION_DURATION = 0.20f;              // 默认 (locomotion 互切)
+    private static final float COMBAT_TRANSITION_DURATION = 0.15f;       // 涉及战斗状态的标准过渡
+    private static final float SPEAR_RECOVERY_TRANSITION_DURATION = 0.40f; // 矛突刺收尾
+    private static final float COMBO_CHAIN_TRANSITION = 0.18f;           // 连击 attack→attack (含 3→1 重置)
+    private static final float ATTACK_TO_DEFENSE_TRANSITION = 0.22f;     // 攻击 → 格挡/招架
+    private static final float ATTACK_RECOVERY_TRANSITION = 0.50f;       // 普通轻攻击 → idle/loco
+    private static final float HEAVY_RECOVERY_TRANSITION = 0.65f;        // 重击/末段 → idle/loco
+    private static final float ATTACK_STARTUP_TRANSITION = 0.12f;        // idle/loco → 起手攻击 (要快)
+
+    // attack→IDLE 时, 客户端延迟切 animName 0.3s, 让攻击动画末帧"喘一下"再过渡。
+    // 不延长 server-side stateTimer (会影响 combo 节奏/CD), 只是 client 渲染层把切换推迟。
+    // combo→combo (state 仍然 ATTACK_LIGHT) 不受影响, 仍然紧凑。
+    private static final long ATTACK_HOLD_TAIL_NANO = 300_000_000L;
 
     // 按玩家 ID 存过渡状态，避免多玩家共用单例 renderer 时互相污染
     private static final java.util.Map<Integer, PlayerAnimState> perPlayerState = new java.util.HashMap<>();
@@ -40,6 +52,9 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         long timedAnimStartNano = 0;
         CombatState timedCombatState = CombatState.IDLE;
         int timedStateTimer = -1;
+        // 攻击末段挂尾: state 切到 IDLE 后, 客户端继续渲染 attack 末帧 N 毫秒, 让"喘一下"再过渡。
+        String attackHoldAnim = null;
+        long attackHoldUntilNano = 0L;
     }
 
     private static PlayerAnimState getState(int entityId) {
@@ -307,12 +322,18 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 && !animName.startsWith("spear_light_");
 
         if (!animName.equals(ps.prevAnimName)) {
-            ps.currentTransitionDuration = isTimedAnimation(animName) || isTimedAnimation(ps.prevAnimName)
-                    ? COMBAT_TRANSITION_DURATION : TRANSITION_DURATION;
+            String prev = ps.prevAnimName;
+            ps.currentTransitionDuration = computeTransitionDuration(prev, animName);
+
+            // 全部攻击 → 非 attack: 都用上一帧 finalPose 作为 prevPose, 靠 ATTACK_RECOVERY_TRANSITION
+            // (0.5s) + smootherstep 拉柔。曾经 sword 用末帧、spear 用专构造, 但 EF 动画末帧/构造末位
+            // 都是"挥砍/突刺极限位"(剑头顶举着、矛伸到最远), 把它们 hold 给玩家看反而怪。
+            // 上一帧 finalPose 是攻击中间帧, 距离 idle 适中, 长 transition 能柔出来。
+            // 仅延长 spear 的 transition 时长(突刺 recovery 比剑挥砍幅度大, 需要更长过渡)。
             if (leavingSpearAttack) {
-                ps.prevPose = createSpearLightTargetPose(player, state, armature, 1.0f);
                 ps.currentTransitionDuration = Math.max(ps.currentTransitionDuration, SPEAR_RECOVERY_TRANSITION_DURATION);
             }
+
             ps.prevAnimName = animName;
             ps.transitionTimer = ps.currentTransitionDuration;
         } else if (activeLocoAnim != null && !activeLocoAnim.equals(ps.prevLocoAnim)) {
@@ -325,7 +346,8 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         if (ps.transitionTimer > 0) {
             ps.transitionTimer -= dt;
             float alpha = 1.0f - Math.max(0, ps.transitionTimer) / ps.currentTransitionDuration;
-            alpha = alpha * alpha * (3 - 2 * alpha);
+            // smootherstep (6t^5 - 15t^4 + 10t^3): C2 连续, 起止帧导数都为 0, 过渡比 smoothstep 更"柔"。
+            alpha = alpha * alpha * alpha * (alpha * (alpha * 6f - 15f) + 10f);
             finalPose = Pose.interpolatePose(ps.prevPose, targetPose, alpha);
         } else {
             finalPose = targetPose;
@@ -489,7 +511,12 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         boolean weaponDrawn = combatOpt.map(cap -> cap.isWeaponDrawn()).orElse(false);
 
         if (player.isCrouching()) {
-            return "sneak";
+            // EF 把蹲分两段: 蹲不动 = KNEEL (static), 蹲移动 = SNEAK (loop)。
+            // 之前只有 sneak, 不动时锁 t=0, 但姿态不对(那是 sneak 的"双腿对称"中间帧, 不是真正的蹲坐)。
+            double dx = player.getX() - player.xOld;
+            double dz = player.getZ() - player.zOld;
+            double hSpeedSq = dx * dx + dz * dz;
+            return hSpeedSq > 0.0004 ? "sneak" : "kneel";
         } else if (player.isSprinting()) {
             return weaponDrawn ? "run_longsword" : "run";
         } else {
@@ -520,7 +547,11 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
     private String resolveLocomotion(Player player) {
         if (player == null) return "idle";
-        if (player.isCrouching()) return "sneak";
+        if (player.isCrouching()) {
+            double dx = player.getX() - player.xOld;
+            double dz = player.getZ() - player.zOld;
+            return (dx * dx + dz * dz) > 0.0004 ? "sneak" : "kneel";
+        }
         if (player.isSprinting()) return "run";
         double dx = player.getX() - player.xOld;
         double dz = player.getZ() - player.zOld;
@@ -531,7 +562,51 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     private static boolean isTimedAnimation(String animName) {
         return animName != null && !animName.contains("idle") && !animName.contains("walk")
                 && !animName.contains("run") && !animName.equals("sneak")
+                && !animName.equals("kneel")
                 && !animName.equals("hold_longsword");
+    }
+
+    // 攻击/格挡类动画 — 用于 transition 时长选择(attack→idle 给长 recovery)。
+    private static boolean isAttackAnim(String name) {
+        if (name == null) return false;
+        return name.startsWith("sword_light_")
+                || name.startsWith("spear_light_")
+                || "sword_dash".equals(name)
+                || "parry".equals(name)
+                || "block".equals(name)
+                || "sword_heavy_charge".equals(name);
+    }
+
+    // swing 类(有挥砍起止轨迹) — 这些动画末帧 = 收尾, 切回 idle 时需要补完末帧弧线。
+    // hold 类(block/charge/parry, 一直是同一个姿势) 不在此列, 它们的"末帧"没有特别意义,
+    // 而且渲染时会叠 tweaker 偏移, 用 raw 末帧覆盖 prevPose 反而会出现"姿势跳一下"(举手 bug)。
+    private static boolean isSwingAttack(String name) {
+        if (name == null) return false;
+        return name.startsWith("sword_light_")
+                || name.startsWith("spear_light_")
+                || "sword_dash".equals(name);
+    }
+
+    // 按 from/to 类型挑过渡时长:
+    //  swing → swing            : combo 链(含 3→1 重置), 紧凑但要够长避免嗖
+    //  swing → block/parry      : 攻击转防御, 中等
+    //  swing → idle/loco        : recovery, 长
+    //  idle/loco → swing        : 起手, 短(出招要快)
+    //  其它 (loco 互切/block↔idle) : 标准
+    private static float computeTransitionDuration(String from, String to) {
+        boolean fromSwing = isSwingAttack(from);
+        boolean toSwing = isSwingAttack(to);
+        boolean toDefense = "block".equals(to) || "parry".equals(to);
+
+        if (fromSwing && toSwing) return COMBO_CHAIN_TRANSITION;
+        if (fromSwing && toDefense) return ATTACK_TO_DEFENSE_TRANSITION;
+        if (fromSwing) {
+            // sword_light_3 同时是连击末段和重击释放, 都给较长 recovery
+            if ("sword_light_3".equals(from)) return HEAVY_RECOVERY_TRANSITION;
+            return ATTACK_RECOVERY_TRANSITION;
+        }
+        if (toSwing) return ATTACK_STARTUP_TRANSITION;
+        return TRANSITION_DURATION;
     }
 
     // 检视转刀关键帧插值: 给定 t(0→1) 和 {t, rx, ry, rz}[] 关键帧，smoothstep 插值后 applyTweakToJoint
@@ -586,6 +661,32 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             if (BlockPoseTweaker.getHeldPos(i) != 0) return true;
         }
         return false;
+    }
+
+    // 攻击动画"末帧 + 当前 loco 腿"作为 attack→idle 过渡的起点。
+    // 直接采样攻击动画 t=animLength 那一帧的全部 joint, 再让腿跟当前 locomotion 走 (跟 isAttack
+    // 分支的混合策略一致, 避免末帧 prevPose 的腿是 attack 期"双腿对称"中间帧, 跟 idle 不衔接)。
+    private Pose createAttackEndPose(Player player, AvatarRenderState state, Armature armature, String attackAnim) {
+        float animLen = MeshManager.getAnimLength(attackAnim);
+        Pose attackEndPose = MeshManager.getPoseAtTime(attackAnim, animLen);
+
+        String locoAnim = resolveLocomotion(player);
+        float locoTime = computeAnimTime(player, locoAnim, state);
+        Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+        java.util.Set<String> legJoints = java.util.Set.of(
+                "Thigh_R", "Leg_R", "Knee_R",
+                "Thigh_L", "Leg_L", "Knee_L");
+
+        Pose merged = new Pose();
+        attackEndPose.forEachEnabledTransforms((name, jt) ->
+                merged.putJointData(name, jt.copy()));
+        locoPose.forEachEnabledTransforms((name, jt) -> {
+            if (legJoints.contains(name)) {
+                merged.putJointData(name, jt.copy());
+            }
+        });
+        return merged;
     }
 
     private Pose createSpearLightTargetPose(Player player, AvatarRenderState state, Armature armature, float progress) {

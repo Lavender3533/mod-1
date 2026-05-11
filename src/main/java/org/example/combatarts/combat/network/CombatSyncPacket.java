@@ -63,12 +63,17 @@ public class CombatSyncPacket {
             // 时, 同步把 client 已经 queue→fire 后的 combo=2 snap 回 combo=1, 造成 3 段动画 1→2→1 闪烁;
             // drawn 同理 — 服务端慢半拍的 drawn=false 会让本地刚拔完的剑短暂回背上 → "回背→攻击"闪烁)。
             // 但 weaponType 必须同步: 这是从手持物推导, 客户端无 swap 检测, 不同步会停在按 R 时的值。
+            // PARRY 例外: 服务端被动触发(收到攻击瞬间), 客户端无法预测, 必须从服务端拉, 否则 HUD 一直显示 BLOCK。
             boolean isLocal = player == Minecraft.getInstance().player;
+            CombatState srvState = CombatState.fromOrdinal(msg.stateOrdinal);
             if (!isLocal) {
-                cap.setState(CombatState.fromOrdinal(msg.stateOrdinal));
+                cap.setState(srvState);
                 cap.setStateTimer(msg.stateTimer);
                 cap.setComboCount(msg.comboCount);
                 cap.setWeaponDrawn(msg.weaponDrawn);
+            } else if (srvState == CombatState.PARRY && cap.getState() != CombatState.PARRY) {
+                cap.setState(CombatState.PARRY);
+                cap.setStateTimer(msg.stateTimer);
             }
             cap.setWeaponType(WeaponType.fromOrdinal(msg.weaponTypeOrdinal));
         });

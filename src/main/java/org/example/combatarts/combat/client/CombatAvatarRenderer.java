@@ -36,11 +36,53 @@ public class CombatAvatarRenderer
         this.wideModel = this.getModel();
         this.slimModel = new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION_SLIM), true);
         this.addLayer(new SkinnedMeshLayer(this));
+
+        // 盔甲: vanilla EquipmentLayerRenderer + 桥接 HumanoidModel (跟随 mod 骨骼)。
+        // 暂时禁用 — 待甲方确认这一版整体表现后再决定是否启用 + 调试坐标系。
+        // BridgedHumanoidModel 文件保留, 启用时取消下面 addLayer 注释即可。
+        /*
+        net.minecraft.client.renderer.entity.ArmorModelSet<BridgedHumanoidModel> bridges =
+                net.minecraft.client.model.geom.ModelLayers.PLAYER_ARMOR.map(
+                        loc -> new BridgedHumanoidModel(context.bakeLayer(loc)));
+        var equipmentRenderer = context.getEquipmentRenderer();
+        var humanoidLayer = net.minecraft.client.resources.model.EquipmentClientInfo.LayerType.HUMANOID;
+        var leggingsLayer = net.minecraft.client.resources.model.EquipmentClientInfo.LayerType.HUMANOID_LEGGINGS;
+
+        this.addLayer(new net.minecraft.client.renderer.entity.layers.SimpleEquipmentLayer<>(
+                this, equipmentRenderer, humanoidLayer,
+                s -> getArmorStack(s, net.minecraft.world.entity.EquipmentSlot.HEAD),
+                bridges.head(), bridges.head()));
+        this.addLayer(new net.minecraft.client.renderer.entity.layers.SimpleEquipmentLayer<>(
+                this, equipmentRenderer, humanoidLayer,
+                s -> getArmorStack(s, net.minecraft.world.entity.EquipmentSlot.CHEST),
+                bridges.chest(), bridges.chest()));
+        this.addLayer(new net.minecraft.client.renderer.entity.layers.SimpleEquipmentLayer<>(
+                this, equipmentRenderer, leggingsLayer,
+                s -> getArmorStack(s, net.minecraft.world.entity.EquipmentSlot.LEGS),
+                bridges.legs(), bridges.legs()));
+        this.addLayer(new net.minecraft.client.renderer.entity.layers.SimpleEquipmentLayer<>(
+                this, equipmentRenderer, humanoidLayer,
+                s -> getArmorStack(s, net.minecraft.world.entity.EquipmentSlot.FEET),
+                bridges.feet(), bridges.feet()));
+        */
+
         this.addLayer(new PlayerItemInHandLayer<>(this));
         this.addLayer(new CombatItemInHandLayer(this, this.itemModelResolver));
         this.addLayer(new GuardWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new BackWeaponLayer(this, this.itemModelResolver));
         this.addLayer(new CombatCapeLayer(this, context));
+    }
+
+    // 从 AvatarRenderState 取指定槽的盔甲 ItemStack。AvatarRenderState extends HumanoidRenderState,
+    // HumanoidRenderState 字段 headEquipment/chestEquipment/legsEquipment/feetEquipment 提供装备的 stack。
+    private static net.minecraft.world.item.ItemStack getArmorStack(AvatarRenderState state, net.minecraft.world.entity.EquipmentSlot slot) {
+        return switch (slot) {
+            case HEAD -> state.headEquipment;
+            case CHEST -> state.chestEquipment;
+            case LEGS -> state.legsEquipment;
+            case FEET -> state.feetEquipment;
+            default -> net.minecraft.world.item.ItemStack.EMPTY;
+        };
     }
 
     @Override
@@ -69,23 +111,22 @@ public class CombatAvatarRenderer
 
         extractCapeState(player, state, partialTick);
 
-        // Hide box model parts when skinned mesh is active
+        var combatOpt = CombatCapabilityEvents.getCombat(player);
+
+        // mod 始终接管渲染 — vanilla model 全程隐藏, vanilla 手持物品全程清空。
+        // 持非 mod 物品时, mod mesh 也渲染 (走 idle/walk/run + ATTACK_LIGHT 动画), 视觉一致;
+        // vanilla 走自己的伤害 (CombatDamageHandler 未拔刀时不介入 → 不会双重伤害)。
         if (MeshManager.getMesh() != null) {
-            this.model.root.visible = false;
+            this.wideModel.root.visible = false;
+            this.slimModel.root.visible = false;
         }
 
-        var combatOpt = CombatCapabilityEvents.getCombat(player);
         if (combatOpt.isPresent()) {
             combatOpt.ifPresent(cap -> {
                 CombatAnimationController.updateAnimation(player, cap);
             });
         }
 
-        // 永远清空 vanilla PlayerItemInHandLayer — 自定义 layer 接管全部物品渲染:
-        //  - CombatItemInHandLayer: 拔刀(任意武器) + 未拔刀(持非 mod 物品) — 都用 mod 骨骼定位
-        //  - GuardWeaponLayer: 拔刀 + BLOCK/PARRY
-        //  - BackWeaponLayer: 未拔刀 + 持 mod 武器(SWORD/SPEAR) — 挂背
-        // 由 vanilla 渲染会撕裂(vanilla 物品挂 vanilla 右臂, 但 mod mesh 走自己的动画)。
         clearHandItem(state);
     }
 

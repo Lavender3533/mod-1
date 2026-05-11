@@ -59,6 +59,7 @@ public final class MeshManager {
             loadEFAnimation("run", "animations/biped/living/run.json");
             loadEFAnimation("run_longsword", "animations/biped/living/run_longsword.json");
             loadEFAnimation("sneak", "animations/biped/living/sneak.json");
+            loadEFAnimation("kneel", "animations/biped/living/kneel.json");
             LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
 
             // Combat animations
