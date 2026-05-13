@@ -63,6 +63,9 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
         Player player = resolvePlayer(state);
         if (player == null) return;
 
+        // 飞行(elytra/创造飞)→ vanilla 自己渲染手持物品, 跳过避免双物品(手 + 脚下两份)。
+        if (FlyingDetector.isFlying(player)) return;
+
         var combatOpt = CombatCapabilityEvents.getCombat(player);
         if (!combatOpt.isPresent()) return;
 
@@ -148,7 +151,7 @@ public class CombatItemInHandLayer extends RenderLayer<AvatarRenderState, Combat
                     BlockPoseTweaker.getHeldPos(2)
             );
 
-            scratchState.submit(poseStack, collector, packedLight, 0, 0);
+            scratchState.submit(poseStack, collector, packedLight, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0);
 
             poseStack.popPose();
         });

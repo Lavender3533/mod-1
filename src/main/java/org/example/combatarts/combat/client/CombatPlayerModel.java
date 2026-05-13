@@ -145,8 +145,12 @@ public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
         int armWidth = slim ? 3 : 4;
         float seamOverlap = 0.1F;
 
+        // root 加微型 cube: 当 hip.visible=false 时仍向管线提交几何体,
+        // 防止 1.21.11 渲染管线因零几何体跳过整个实体。
         PartDefinition root = meshRoot.addOrReplaceChild("root",
-                CubeListBuilder.create(), PartPose.offset(0, 24, 0));
+                CubeListBuilder.create().texOffs(0, 0)
+                        .addBox(-0.005f, -0.005f, -0.005f, 0.01f, 0.01f, 0.01f),
+                PartPose.offset(0, 24, 0));
 
         PartDefinition hip = root.addOrReplaceChild("hip",
                 CubeListBuilder.create(), PartPose.offset(0, -12, 0));
@@ -282,6 +286,19 @@ public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
     public void setupAnim(AvatarRenderState state) {
         this.resetPose();
 
+        // resetPose 会重置 scale 到 1.0。非飞行时缩小 vanilla 模型让蒙皮网格独显,
+        // 但保持 visible=true 让管线不跳过实体。飞行时正常大小。
+        Player flyCheckPlayer = resolvePlayer(state);
+        boolean flying = state.isFallFlying
+                || (flyCheckPlayer != null && FlyingDetector.isFlying(flyCheckPlayer));
+
+        // 非飞行时隐藏盒子模型(蒙皮网格独显), 飞行时显示盒子模型(蒙皮层跳过)。
+        // 必须在 setupAnim 里设而非 extractRenderState, 因为 renderer 是单例,
+        // 多玩家共享 model, extractRenderState 的顺序会互相覆盖。
+        if (MeshManager.getMesh() != null) {
+            this.hip.visible = flying;
+        }
+
         // Overlay visibility based on player settings
         this.hat.visible = state.showHat;
         this.jacket.visible = state.showJacket;
@@ -291,6 +308,20 @@ public class  CombatPlayerModel extends EntityModel<AvatarRenderState>
         this.leftLowerSleeve.visible = state.showLeftSleeve;
         this.rightPants.visible = state.showRightPants;
         this.leftPants.visible = state.showLeftPants;
+
+        // 鞘翅飞行 → idle 姿态 + 头朝前
+        if (state.isFallFlying) {
+            this.head.xRot = -0.7853982F;
+            return;
+        }
+
+        // 创造飞行 → vanilla 摆动
+        Player player = resolvePlayer(state);
+        if (player != null && FlyingDetector.isFlying(player)) {
+            applyVanillaFallback(state);
+            applyLookDirection(state);
+            return;
+        }
 
         if (CombatAnimationController.isActive(state)) {
             CombatAnimationController.applyTo17Bones(this.boneMap, state);

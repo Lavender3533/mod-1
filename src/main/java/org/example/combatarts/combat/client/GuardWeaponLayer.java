@@ -35,6 +35,9 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         Player player = resolvePlayer(state);
         if (player == null) return;
 
+        // 飞行(elytra/创造飞)→ vanilla 渲染手持, 跳过避免双物品。
+        if (FlyingDetector.isFlying(player)) return;
+
         var combatOpt = CombatCapabilityEvents.getCombat(player);
         if (!combatOpt.isPresent()) return;
 
@@ -120,7 +123,7 @@ public class GuardWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                         (float) Math.toRadians(bladeRoll), 0.0F, 0.574F, -0.819F));
             }
 
-            scratchState.submit(poseStack, collector, packedLight, 0, 0);
+            scratchState.submit(poseStack, collector, packedLight, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0);
 
             poseStack.popPose();
         });

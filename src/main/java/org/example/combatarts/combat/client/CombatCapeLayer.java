@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.core.ClientAsset;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Items;
 import org.joml.Quaternionf;
 import org.example.combatarts.combat.client.render.mesh.*;
 
@@ -34,6 +35,7 @@ public class CombatCapeLayer extends RenderLayer<AvatarRenderState, CombatPlayer
                        AvatarRenderState state, float yRot, float xRot) {
         if (state.isInvisible || !state.showCape) return;
         if (state.skin == null) return;
+        if (state.chestEquipment.is(Items.ELYTRA)) return;
         ClientAsset.Texture capeAsset = state.skin.cape();
         if (capeAsset == null) return;
         Identifier capeTex = capeAsset.texturePath();

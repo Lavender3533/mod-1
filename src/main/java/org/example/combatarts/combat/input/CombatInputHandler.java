@@ -62,7 +62,8 @@ public class CombatInputHandler {
             boolean release = action == GLFW.GLFW_RELEASE;
 
             // 未拔刀:
-            //  持 mod 武器(SWORD/SPEAR) → 自动拔刀 + queue 攻击, 取消 vanilla(避免 vanilla 用剑伤害)
+            //  第三人称 + mod 武器 → 自动拔刀 + queue 攻击 (取消 vanilla, 避免 vanilla 用剑伤害)
+            //  第一人称 + mod 武器 → 不强制切视角, vanilla 攻击 + vanilla 手臂 swing (玩家想进战斗模式自己按 R)
             //  持其他物品/空手 → 触发 ATTACK_LIGHT 走 mod 动画/combo, 但不取消 vanilla → vanilla 处理伤害
             if (!cap.isWeaponDrawn()) {
                 if (button == InputConstants.MOUSE_BUTTON_LEFT && press) {
@@ -76,10 +77,16 @@ public class CombatInputHandler {
                     }
                     WeaponType type = WeaponDetector.detect(mc.player);
                     if (type != WeaponType.UNARMED) {
-                        cap.setWeaponType(type);
-                        requestWithPrediction(cap, CombatState.DRAW_WEAPON);
-                        pendingAttackAfterDraw = true;
-                        return true;
+                        // 仅第三人称下自动拔刀; 第一人称交给 vanilla 让玩家看到自己手臂的 swing 动画
+                        boolean inThirdPerson = mc.options.getCameraType() != CameraType.FIRST_PERSON;
+                        if (inThirdPerson) {
+                            cap.setWeaponType(type);
+                            requestWithPrediction(cap, CombatState.DRAW_WEAPON);
+                            pendingAttackAfterDraw = true;
+                            return true;
+                        }
+                        // 第一人称: 不取消 vanilla, vanilla 自己处理 swing 和伤害
+                        return false;
                     }
                     // 持非 mod 物品/空手: 仅触发 mod 动画(走 ATTACK_LIGHT), vanilla 走自己的伤害
                     requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
@@ -88,12 +95,17 @@ public class CombatInputHandler {
             }
 
             if (button == InputConstants.MOUSE_BUTTON_LEFT) {
+                // 拔刀/收刀动画期间忽略左键，避免 F5 收刀窗口期循环触发攻击
+                CombatState curLeftState = cap.getState();
+                if (curLeftState == CombatState.DRAW_WEAPON || curLeftState == CombatState.SHEATH_WEAPON) {
+                    return true;
+                }
                 if (press) {
                     // 拔刀但当前手持非武器(滚轮经过食物/方块/非 mod 武器)→ 服务端会以 UNARMED 拒绝 ATTACK_LIGHT,
                     // 但客户端预测仍能播 mod 动画(sync packet 不回滚本地 state); vanilla 自己处理伤害。
                     if (cap.getWeaponType() == WeaponType.UNARMED) {
                         requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
-                        return false; // 不取消 vanilla, 让 vanilla 处理伤害
+                        return false; // 不取消 vanilla, 让 vanilla 处理伤害 + swing 动画
                     }
                     // 左键按下：触发轻攻击（冲刺时变冲刺攻击）
                     if (shouldUseDashAttack(mc, cap)) {
@@ -102,11 +114,26 @@ public class CombatInputHandler {
                     } else {
                         requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
                     }
+                    // 第一人称需要 vanilla swing 动画(手臂挥出去) — 我们 return true 取消 vanilla 攻击,
+                    // 但要主动调 swing() 让 vanilla 第一人称手臂仍然动起来。swing() 只触发动画, 不触发伤害。
+                    mc.player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+                    return true; // 仅 press 取消 vanilla 攻击 (避免 vanilla 用剑伤害)
                 }
-                return true; // 总是取消 vanilla 左键（无论按下/松开/重复）
+                // release 让 vanilla 收到 → 否则 attackKey 状态卡住, 切换物品后左键持续破坏方块
+                return false;
             }
 
             if (button == InputConstants.MOUSE_BUTTON_RIGHT) {
+                // 非武器物品(食物/药水/弓等): 不拦截右键, 让 vanilla 处理使用
+                WeaponType heldWeapon = WeaponDetector.detect(mc.player);
+                if (heldWeapon == WeaponType.UNARMED) {
+                    return false;
+                }
+                // 拔刀/收刀动画期间忽略右键，避免 F5 收刀窗口期狂按右键循环触发格挡
+                CombatState curState = cap.getState();
+                if (curState == CombatState.DRAW_WEAPON || curState == CombatState.SHEATH_WEAPON) {
+                    return true;
+                }
                 if (press) {
                     rightMousePressed = true;
                     blockHoldTicks = 0;
@@ -152,6 +179,7 @@ public class CombatInputHandler {
                     && cap.getState() == CombatState.IDLE) {
                 pendingAttackAfterDraw = false;
                 requestWithPrediction(cap, CombatState.ATTACK_LIGHT);
+                mc.player.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
             } else if (pendingAttackAfterDraw && !cap.isWeaponDrawn()
                     && cap.getState() != CombatState.DRAW_WEAPON) {
                 // DRAW_WEAPON 没起来(被打断/取消) → 清 pending, 防止下次 IDLE 误触

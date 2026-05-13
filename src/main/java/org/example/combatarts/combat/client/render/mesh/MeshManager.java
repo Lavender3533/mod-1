@@ -25,12 +25,14 @@ import java.util.function.Supplier;
 public final class MeshManager {
     private static final Logger LOGGER = LoggerFactory.getLogger("CombatArts");
     private static final Identifier BIPED_MODEL = Identifier.parse("combat_arts:models/entity/biped.json");
+    private static final Identifier BIPED_SLIM_MODEL = Identifier.parse("combat_arts:models/entity/biped_slim.json");
 
     /** Blender exports with Z-up; Minecraft uses Y-up.  -90 deg around X fixes it. */
     private static final OpenMatrix4f BLENDER_TO_MC = OpenMatrix4f.createRotatorDeg(-90.0F, Vec3f.X_AXIS);
 
     private static Armature armature;
     private static SkinnedMesh mesh;
+    private static SkinnedMesh slimMesh;
     private static Map<String, Map<String, TransformSheet>> loadedAnims = Maps.newHashMap();
 
     private MeshManager() {}
@@ -52,6 +54,12 @@ public final class MeshManager {
             LOGGER.info("[MeshManager] Loaded biped model: {} joints, {} mesh parts",
                     armature.getJointNumber(), mesh.getAllParts().size());
 
+            JsonObject slimRoot = loadJson(BIPED_SLIM_MODEL);
+            if (slimRoot != null) {
+                slimMesh = parseMesh(slimRoot.getAsJsonObject("vertices"));
+                LOGGER.info("[MeshManager] Loaded slim biped model: {} mesh parts", slimMesh.getAllParts().size());
+            }
+
             loadEFAnimation("idle", "animations/biped/living/idle.json");
             loadEFAnimation("hold_longsword", "animations/biped/living/hold_longsword.json");
             loadEFAnimation("walk", "animations/biped/living/walk.json");
@@ -60,6 +68,8 @@ public final class MeshManager {
             loadEFAnimation("run_longsword", "animations/biped/living/run_longsword.json");
             loadEFAnimation("sneak", "animations/biped/living/sneak.json");
             loadEFAnimation("kneel", "animations/biped/living/kneel.json");
+            loadEFAnimation("eat_mainhand", "animations/biped/living/eat_mainhand.json");
+            loadEFAnimation("drink_mainhand", "animations/biped/living/drink_mainhand.json");
             LOGGER.info("[MeshManager] Loaded {} EF animations", loadedAnims.size());
 
             // Combat animations
@@ -79,6 +89,7 @@ public final class MeshManager {
             // 静态保持。比手写 Euler 准确（坐标系自动转换）。
             loadEFAnimation("sword_heavy_charge", "animations/biped/combat/sword_heavy_charge.json");
             loadEFAnimation("parry", "animations/biped/combat/guard_sword_hit.json");
+            loadEFAnimation("bow_aim", "animations/biped/combat/bow_aim_mid.json");
             LOGGER.info("[MeshManager] Total animations: {}", loadedAnims.size());
         } catch (Exception e) {
             LOGGER.error("[MeshManager] Failed to load biped model", e);
@@ -93,6 +104,11 @@ public final class MeshManager {
     @Nullable
     public static SkinnedMesh getMesh() {
         return mesh;
+    }
+
+    @Nullable
+    public static SkinnedMesh getSlimMesh() {
+        return slimMesh;
     }
 
     public static Pose getPoseAtTime(String animName, float time) {
@@ -256,6 +272,45 @@ public final class MeshManager {
         SkinnedMesh result = new SkinnedMesh(arrayMap, meshMap, null, null);
         result.initialize();
         return result;
+    }
+
+    /**
+     * Wide mesh 的手臂 UV 按 4px 宽映射。Slim 皮肤手臂只有 3px, 第4列是透明。
+     * 把所有手臂 part 的 UV 中超出 slim 安全范围的 U 坐标向内收缩 1/64 (1px),
+     * 让 wide mesh 兼容 slim 皮肤。
+     *
+     * 纹理布局 (64x64):
+     * Right arm: texOffs(40,16) → front U=[44,48] back U=[52,56]
+     * Left arm:  texOffs(32,48) → front U=[36,40] back U=[44,48]
+     * Right sleeve: texOffs(40,32) → 同 right arm 偏移
+     * Left sleeve:  texOffs(48,48) → front U=[52,56] back U=[60,64]
+     *
+     * Slim 比 wide 每边窄 1px: front/back 的右边界各内收 1/64。
+     */
+    private static void clampArmUVsForSlimCompat(SkinnedMesh mesh) {
+        java.util.Set<String> armParts = java.util.Set.of(
+                "rightArm", "leftArm", "rightSleeve", "leftSleeve");
+        float[] uvs = mesh.uvs();
+        if (uvs == null) return;
+
+        for (var entry : mesh.getPartEntry()) {
+            if (!armParts.contains(entry.getKey())) continue;
+            var part = entry.getValue();
+            if (part == null) continue;
+
+            for (VertexBuilder vb : part.getVertices()) {
+                int ui = vb.uv * 2;
+                if (ui < 0 || ui >= uvs.length) continue;
+                float u = uvs[ui];
+                float px = 1.0f / 64.0f;
+                float gridPos = u * 64.0f;
+                float frac = gridPos - (float) Math.floor(gridPos);
+                if (frac < 0.01f && gridPos > 1.0f) {
+                    uvs[ui] = u - px;
+                }
+            }
+        }
+        LOGGER.info("[MeshManager] Clamped arm UVs for slim skin compatibility");
     }
 
     // ---------------------------------------------------------------

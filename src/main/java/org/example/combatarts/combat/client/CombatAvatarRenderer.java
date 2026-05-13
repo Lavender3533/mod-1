@@ -30,12 +30,14 @@ public class CombatAvatarRenderer
 
     private final CombatPlayerModel wideModel;
     private final CombatPlayerModel slimModel;
+    private boolean currentEntityFlying;
 
     public CombatAvatarRenderer(EntityRendererProvider.Context context) {
         super(context, new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION), false), 0.5F);
         this.wideModel = this.getModel();
         this.slimModel = new CombatPlayerModel(context.bakeLayer(CombatPlayerModel.LAYER_LOCATION_SLIM), true);
         this.addLayer(new SkinnedMeshLayer(this));
+        this.addLayer(new CombatWingsLayer(this, context));
 
         // 盔甲: vanilla EquipmentLayerRenderer + 桥接 HumanoidModel (跟随 mod 骨骼)。
         // 暂时禁用 — 待甲方确认这一版整体表现后再决定是否启用 + 调试坐标系。
@@ -111,14 +113,19 @@ public class CombatAvatarRenderer
 
         extractCapeState(player, state, partialTick);
 
+        // AvatarRenderer 自动填的字段, 我们 extends LivingEntityRenderer 没继承, 手动填:
+        // - fallFlyingTimeInTicks: setupRotations 用 fallFlyingScale() 算 entity pitch (鞘翅大字)
+        state.fallFlyingTimeInTicks = (float) player.getFallFlyingTicks() + partialTick;
+
         var combatOpt = CombatCapabilityEvents.getCombat(player);
 
-        // mod 始终接管渲染 — vanilla model 全程隐藏, vanilla 手持物品全程清空。
-        // 持非 mod 物品时, mod mesh 也渲染 (走 idle/walk/run + ATTACK_LIGHT 动画), 视觉一致;
-        // vanilla 走自己的伤害 (CombatDamageHandler 未拔刀时不介入 → 不会双重伤害)。
+        // 飞行 → 显示 vanilla 盒子模型 + 跳过蒙皮网格 (各 layer 自行检查 FlyingDetector)
+        boolean isFlying = FlyingDetector.isFlying(player);
+        this.currentEntityFlying = isFlying;
+
         if (MeshManager.getMesh() != null) {
-            this.wideModel.root.visible = false;
-            this.slimModel.root.visible = false;
+            this.wideModel.root.visible = true;
+            this.slimModel.root.visible = true;
         }
 
         if (combatOpt.isPresent()) {
@@ -127,7 +134,9 @@ public class CombatAvatarRenderer
             });
         }
 
-        clearHandItem(state);
+        if (!isFlying) {
+            clearHandItem(state);
+        }
     }
 
     private static void clearHandItem(AvatarRenderState state) {
@@ -167,6 +176,18 @@ public class CombatAvatarRenderer
     @Override
     protected void scale(AvatarRenderState state, PoseStack poseStack) {
         poseStack.scale(0.9375F, 0.9375F, 0.9375F);
+    }
+
+    // 抄 vanilla AvatarRenderer.setupRotations 的飞行 pitch 逻辑 — 我们 extends LivingEntityRenderer
+    // 默认 setupRotations 不处理飞行, 玩家会站着不会"水平大字"。
+    // vanilla 用 fallFlyingScale (累积公式 t²/100) 渐进 pitch, 但这会让起飞前 0.5s 看不到效果。
+    // 我们简化: 一进入 isFallFlying 就立即 90°, 不等累积。
+    @Override
+    protected void setupRotations(AvatarRenderState state, PoseStack poseStack, float bob, float yBodyRot) {
+        super.setupRotations(state, poseStack, bob, yBodyRot);
+        if (state.isFallFlying && !state.isAutoSpinAttack) {
+            poseStack.mulPose(com.mojang.math.Axis.XP.rotationDegrees(-90.0F - state.xRot));
+        }
     }
 
     @Override

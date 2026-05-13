@@ -167,6 +167,7 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 	public void drawPosed(PoseStack poseStack, VertexConsumer bufferbuilder, Mesh.DrawingFunction drawingFunction, int packedLight, float r, float g, float b, float a, int overlay, @Nullable Armature armature, OpenMatrix4f[] poses) {
 		Matrix4f pose = poseStack.last().pose();
 		Matrix3f normal = poseStack.last().normal();
+		boolean padQuads = !TriangulatedRenderType.isTriangleMode();
 
 		// Allocate per-call pose arrays for CPU skinning
 		OpenMatrix4f[] totalPoses = new OpenMatrix4f[poses.length];
@@ -201,8 +202,53 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 
 					drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
 
-					// Convert triangle to degenerate quad: duplicate every 3rd vertex
-					if (idx % 3 == 2) {
+					if (padQuads && idx % 3 == 2) {
+						drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
+					}
+				}
+			}
+		}
+	}
+
+	/** Overload for SubmitNodeCollector's CustomGeometryRenderer callback (receives Pose, not PoseStack). */
+	public void drawPosed(PoseStack.Pose poseEntry, VertexConsumer bufferbuilder, Mesh.DrawingFunction drawingFunction, int packedLight, float r, float g, float b, float a, int overlay, @Nullable Armature armature, OpenMatrix4f[] poses) {
+		Matrix4f pose = poseEntry.pose();
+		Matrix3f normal = poseEntry.normal();
+		boolean padQuads = !TriangulatedRenderType.isTriangleMode();
+
+		OpenMatrix4f[] totalPoses = new OpenMatrix4f[poses.length];
+		OpenMatrix4f[] totalNormals = new OpenMatrix4f[poses.length];
+
+		for (SkinnedMeshPart part : this.parts.values()) {
+			if (!part.isHidden()) {
+				OpenMatrix4f transform = part.getVanillaPartTransform();
+
+				for (int i = 0; i < poses.length; i++) {
+					totalPoses[i] = new OpenMatrix4f(poses[i]);
+
+					if (armature != null) {
+						totalPoses[i].mulBack(armature.searchJointById(i).getToOrigin());
+					}
+
+					if (transform != null) {
+						totalPoses[i].mulBack(transform);
+					}
+
+					totalNormals[i] = totalPoses[i].removeTranslation();
+				}
+
+				List<VertexBuilder> verts = part.getVertices();
+				for (int idx = 0; idx < verts.size(); idx++) {
+					VertexBuilder vi = verts.get(idx);
+					this.getVertexPosition(vi.position, POSITION, totalPoses);
+					this.getVertexNormal(vi.position, vi.normal, NORMAL, totalNormals);
+
+					POSITION.mul(pose);
+					NORMAL.mul(normal);
+
+					drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
+
+					if (padQuads && idx % 3 == 2) {
 						drawingFunction.draw(bufferbuilder, POSITION.x, POSITION.y, POSITION.z, NORMAL.x, NORMAL.y, NORMAL.z, packedLight, r, g, b, a, this.uvs[vi.uv * 2], this.uvs[vi.uv * 2 + 1], overlay);
 					}
 				}
@@ -211,8 +257,6 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 	}
 
 	/**
-	 * Draws the model using CPU skinning (no compute shader path).
-	 */
 	@Override
 	public void draw(PoseStack poseStack, MultiBufferSource bufferSources, RenderType renderType, Mesh.DrawingFunction drawingFunction, int packedLight, float r, float g, float b, float a, int overlay, @Nullable Armature armature, OpenMatrix4f[] poses) {
 		this.drawPosed(poseStack, bufferSources.getBuffer(renderType), drawingFunction, packedLight, r, g, b, a, overlay, armature, poses);
@@ -255,6 +299,7 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 				return;
 			}
 
+			boolean padQuads = !TriangulatedRenderType.isTriangleMode();
 			Vector4f color = this.getColor(r, g, b, a);
 			Matrix4f pose = poseStack.last().pose();
 			Matrix3f normal = poseStack.last().normal();
@@ -268,7 +313,7 @@ public class SkinnedMesh extends StaticMesh<SkinnedMesh.SkinnedMeshPart> {
 				NORMAL.mul(normal);
 				drawingFunction.draw(bufferBuilder, POSITION.x(), POSITION.y(), POSITION.z(), NORMAL.x(), NORMAL.y(), NORMAL.z(), packedLight, color.x, color.y, color.z, color.w, uvs[vi.uv * 2], uvs[vi.uv * 2 + 1], overlay);
 
-				if (idx % 3 == 2) {
+				if (padQuads && idx % 3 == 2) {
 					drawingFunction.draw(bufferBuilder, POSITION.x(), POSITION.y(), POSITION.z(), NORMAL.x(), NORMAL.y(), NORMAL.z(), packedLight, color.x, color.y, color.z, color.w, uvs[vi.uv * 2], uvs[vi.uv * 2 + 1], overlay);
 				}
 			}

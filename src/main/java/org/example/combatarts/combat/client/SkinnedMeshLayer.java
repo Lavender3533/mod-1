@@ -69,10 +69,25 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
     public void submit(PoseStack poseStack, SubmitNodeCollector collector, int packedLight,
                        AvatarRenderState state, float yRot, float xRot) {
         Armature armature = MeshManager.getArmature();
-        SkinnedMesh mesh = MeshManager.getMesh();
-        if (armature == null || mesh == null) return;
+        SkinnedMesh wideMesh = MeshManager.getMesh();
+        if (armature == null || wideMesh == null) return;
 
         Player player = resolvePlayer(state);
+
+        // 根据皮肤类型选择 mesh: slim 皮肤用 slim mesh (UV 匹配 3px 手臂),
+        // wide 皮肤用 wide mesh。退化四边形问题已修复(TRIANGLES 模式不发射填充顶点),
+        // slim mesh 不再有手臂洞。
+        SkinnedMesh slimMesh = MeshManager.getSlimMesh();
+        boolean isSlim = state.skin != null
+                && state.skin.model() == net.minecraft.world.entity.player.PlayerModelType.SLIM;
+        SkinnedMesh mesh = (isSlim && slimMesh != null) ? slimMesh : wideMesh;
+
+        // 飞行(elytra 鞘翅 OR 创造模式飞)→ 完全交给 vanilla 渲染原版飞行 pose, mod mesh 不画。
+        // 调试冻结模式始终生效, 否则 dev 调参看不到效果。
+        if (player != null && BlockPoseTweaker.getDebugTargetAnim() == null
+                && FlyingDetector.isFlying(player)) {
+            return;
+        }
 
         // Use EF animations for all states
         String animName = resolveAnimation(player);
@@ -92,6 +107,7 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
         ).contains(animName);
         boolean isDodge = "dodge".equals(animName);
         boolean isSpearAttack = animName.startsWith("spear_light_");
+        boolean isUseItem = java.util.Set.of("eat_mainhand", "drink_mainhand", "bow_aim").contains(animName);
 
         ICombatCapability cap = player != null
                 ? CombatCapabilityEvents.getCombat(player).orElse(null) : null;
@@ -270,10 +286,10 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 }
             });
 
-        // 检视转刀: 绑定到 INSPECT 状态自身的计时，按一下固定转一整圈。
+        // 检视转刀: 持续循环旋转，直到被打断。
                 float inspectDuration = MeshManager.getAnimLength(animName);
                 float spinT = inspectDuration > 0.0f
-                    ? Math.min(combatTime / inspectDuration, 1.0f)
+                    ? (combatTime / inspectDuration) % 1.0f
                     : 0.0f;
                 float spinDeg = -360f * spinT;
                 float wave = (float) Math.sin(spinT * Math.PI);
@@ -304,6 +320,27 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
             // Dodge: full body
             float combatTime = computeAnimTime(player, animName, state);
             targetPose = MeshManager.getPoseAtTime(animName, combatTime);
+        } else if (isUseItem) {
+            // 使用物品(吃喝/拉弓): 上半身用使用动画, 腿用 locomotion (边走边吃)
+            float combatTime = computeAnimTime(player, animName, state);
+            Pose combatPose = MeshManager.getPoseAtTime(animName, combatTime);
+            String locoAnim = resolveLocomotion(player);
+            activeLocoAnim = locoAnim;
+            float locoTime = computeAnimTime(player, locoAnim, state);
+            Pose locoPose = MeshManager.getPoseAtTime(locoAnim, locoTime);
+
+            java.util.Set<String> legJoints = java.util.Set.of(
+                    "Thigh_R", "Leg_R", "Knee_R",
+                    "Thigh_L", "Leg_L", "Knee_L");
+
+            targetPose = new Pose();
+            combatPose.forEachEnabledTransforms((name, jt) ->
+                    targetPose.putJointData(name, jt.copy()));
+            locoPose.forEachEnabledTransforms((name, jt) -> {
+                if (legJoints.contains(name)) {
+                    targetPose.putJointData(name, jt.copy());
+                }
+            });
         } else {
             float animTime = computeAnimTime(player, animName, state);
             targetPose = MeshManager.getPoseAtTime(animName, animTime);
@@ -372,12 +409,25 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                     JointTransform.fromMatrixWithoutScale(headRotMatrix), OpenMatrix4f::mul);
         }
 
+        // Arm swing overlay (placing blocks, using items, attacking without combat state)
+        if (player != null && player.swinging && !isAttack && !isDodge) {
+            float partialTick = Minecraft.getInstance().getDeltaTracker().getGameTimeDeltaPartialTick(true);
+            float swingProgress = player.getAttackAnim(partialTick);
+            float arc = (float) Math.sin(swingProgress * Math.PI);
+            float downArc = (float) Math.sin(swingProgress * swingProgress * Math.PI);
+            applyTweakToJoint(finalPose, armature, "Shoulder_R", 50 * arc, 20 * arc, 0);
+            applyTweakToJoint(finalPose, armature, "Arm_R", 30 * downArc, 0, 0);
+        }
+
         armature.setPose(finalPose);
 
         Identifier skinTex = state.skin.body().texturePath();
+        net.minecraft.client.renderer.rendertype.RenderType meshRenderType = TriangulatedRenderType.entityTriangles(skinTex);
         MultiBufferSource.BufferSource bufferSource = Minecraft.getInstance().renderBuffers().bufferSource();
-        VertexConsumer buffer = bufferSource.getBuffer(
-                TriangulatedRenderType.entityTriangles(skinTex));
+        VertexConsumer buffer = bufferSource.getBuffer(meshRenderType);
+
+        // DEBUG: 记录绘制前状态
+        String bufferClassName = buffer.getClass().getSimpleName();
 
         poseStack.pushPose();
         poseStack.scale(-1.0f, -1.0f, 1.0f);
@@ -438,6 +488,8 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
                 ps.timedStateTimer = stateTimer;
             }
             float elapsed = (System.nanoTime() - ps.timedAnimStartNano) / 1_000_000_000f;
+            // inspect 用 modulo 循环，其它 timed 动画仍 clamp
+            if ("inspect".equals(animName)) return elapsed;
             return Math.min(elapsed, animLength);
         }
 
@@ -506,6 +558,23 @@ public class SkinnedMeshLayer extends RenderLayer<AvatarRenderState, CombatPlaye
 
         if (result[0] != null && MeshManager.getAnimLength(result[0]) > 0) {
             return result[0];
+        }
+
+        // 使用非武器物品(吃喝/拉弓): 播放对应 EF 动画
+        if (player.isUsingItem()) {
+            net.minecraft.world.item.ItemStack useItem = player.getUseItem();
+            if (!useItem.isEmpty()) {
+                net.minecraft.world.item.ItemUseAnimation useAnim = useItem.getUseAnimation();
+                String animName = switch (useAnim) {
+                    case EAT -> "eat_mainhand";
+                    case DRINK -> "drink_mainhand";
+                    case BOW, CROSSBOW -> "bow_aim";
+                    default -> null;
+                };
+                if (animName != null && MeshManager.getAnimLength(animName) > 0) {
+                    return animName;
+                }
+            }
         }
 
         boolean weaponDrawn = combatOpt.map(cap -> cap.isWeaponDrawn()).orElse(false);

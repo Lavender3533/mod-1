@@ -34,6 +34,9 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
         Player player = resolvePlayer(state);
         if (player == null) return;
 
+        // 飞行时 vanilla 自己渲染手持物品 — 跳过背挂避免双剑(背 + 手两把同物品)。
+        if (FlyingDetector.isFlying(player)) return;
+
         boolean drawn = CombatCapabilityEvents.getCombat(player)
                 .map(CombatCapabilityEvents::shouldRenderWeaponInHand)
                 .orElse(false);
@@ -93,7 +96,7 @@ public class BackWeaponLayer extends RenderLayer<AvatarRenderState, CombatPlayer
             applyBackWeaponTransform(poseStack, weaponType);
         }
 
-        scratchState.submit(poseStack, collector, packedLight, 0, 0);
+        scratchState.submit(poseStack, collector, packedLight, net.minecraft.client.renderer.texture.OverlayTexture.NO_OVERLAY, 0);
 
         poseStack.popPose();
     }
